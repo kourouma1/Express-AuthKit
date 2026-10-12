@@ -48,6 +48,10 @@ npm install express-authkit express
 
 ## Démarrage en cinq minutes
 
+> **JavaScript ou TypeScript ?** Tous les exemples de cette documentation sont en **JavaScript**.
+> Vous utilisez **TypeScript** ? Suivez plutôt le [démarrage TypeScript](docs/typescript.md) :
+> même code, avec la configuration et les trois petites différences à connaître.
+
 **Étape 1 — Créez un projet**
 
 ```bash
@@ -186,7 +190,7 @@ La liste complète se trouve dans le [guide de sécurité](docs/securite.md).
 - [Gérer les mots de passe](docs/mots-de-passe.md) (inscription, changement de mot de passe)
 - [Rôles et permissions](docs/roles-et-permissions.md) (réserver une route aux administrateurs…)
 - [Rester connecté : les refresh tokens](docs/refresh-tokens.md) (et la déconnexion)
-- [Utiliser TypeScript](docs/typescript.md) (autocomplétion, `req.auth` typé)
+- [Utiliser TypeScript](docs/typescript.md) (démarrage TypeScript, différences avec les exemples JavaScript)
 - [Régler la configuration](docs/configuration.md)
 
 **Quand quelque chose ne va pas**

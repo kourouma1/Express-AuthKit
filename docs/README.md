@@ -1,6 +1,7 @@
 # Documentation d'Express AuthKit
 
-**En bref** : commencez par le [README](../README.md). En cinq minutes, vous aurez une API avec
+**En bref** : commencez par le [README](../README.md). Tous les exemples sont en **JavaScript** ;
+si vous utilisez **TypeScript**, commencez par [cette page](typescript.md). En cinq minutes, vous aurez une API avec
 une route de connexion et une route protégée. Ensuite, choisissez la page qui répond à votre question.
 
 ## Je débute
@@ -13,7 +14,7 @@ une route de connexion et une route protégée. Ensuite, choisissez la page qui 
 | Changer la durée des tokens ou le secret | [Configuration](configuration.md) |
 | Garder l'utilisateur connecté et gérer la déconnexion | [Refresh tokens](refresh-tokens.md) |
 | Réserver des routes à certains rôles ou permissions | [Rôles et permissions](roles-et-permissions.md) |
-| Utiliser TypeScript ou l'autocomplétion | [TypeScript](typescript.md) |
+| Utiliser TypeScript (ou l'autocomplétion en JavaScript) | [TypeScript](typescript.md) |
 
 ## J'ai un problème
 

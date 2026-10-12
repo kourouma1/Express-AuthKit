@@ -12,7 +12,7 @@
  */
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
-import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -64,6 +64,33 @@ async function verifyBlankProject(workDir, tarball) {
   console.log("✔ blank JavaScript project");
   await verifyReadmeQuickstart(projectDir);
   await verifyTypes(projectDir);
+  await verifyTypeScriptQuickstart(projectDir);
+}
+
+/**
+ * Compile en mode strict, puis exécute, le démarrage TypeScript de
+ * docs/typescript.md (tsconfig.json et src/server.ts copiés tels quels).
+ * Aucun fichier TypeScript n'est versionné : il est extrait de la doc ici.
+ */
+async function verifyTypeScriptQuickstart(projectDir) {
+  const doc = await readFile(join(ROOT, "docs", "typescript.md"), "utf8");
+  const quickstart = doc.slice(doc.indexOf("## Démarrage en cinq minutes (TypeScript)"));
+  const tsconfig = /```json\n([\s\S]*?)```/.exec(quickstart)?.[1];
+  const server = /```typescript\n([\s\S]*?)```/.exec(quickstart)?.[1];
+  assert.ok(tsconfig && server, "TypeScript quick-start blocks not found in docs/typescript.md");
+
+  const appDir = join(projectDir, "ts-quickstart");
+  await mkdir(join(appDir, "src"), { recursive: true });
+  await writeFile(join(appDir, "package.json"), JSON.stringify({ type: "module" }));
+  await writeFile(join(appDir, "tsconfig.json"), tsconfig);
+  await writeFile(join(appDir, "src", "server.ts"), server);
+
+  const tsc = join(projectDir, "node_modules", "typescript", "bin", "tsc");
+  run(process.execPath, [tsc, "-p", join(appDir, "tsconfig.json")], appDir);
+
+  const compiled = join(appDir, "dist", "server.js");
+  await smokeTestServer(compiled, appDir, readmeLikeChecks({ adminRoute: true }));
+  console.log("✔ TypeScript quick start (docs/typescript.md compiled in strict mode and executed)");
 }
 
 /**
@@ -87,45 +114,77 @@ async function verifyReadmeQuickstart(projectDir) {
   const quickstart = readme.slice(readme.indexOf("## Démarrage en cinq minutes"));
   const code = /```javascript\n([\s\S]*?)```/.exec(quickstart)?.[1];
   assert.ok(code, "README quick-start code block not found");
-  // Seul le port est remplacé, pour ne pas entrer en conflit avec un service local.
+  await writeFile(join(projectDir, "server.js"), code);
+  await smokeTestServer(join(projectDir, "server.js"), projectDir, readmeLikeChecks({ adminRoute: false }));
+  console.log("✔ README quick start (copied verbatim) and npx express-authkit secret");
+}
+
+/**
+ * Démarre un serveur d'exemple sur un port libre (seul le port 3000 est
+ * remplacé, pour éviter un conflit avec un service local), puis lance les
+ * vérifications HTTP.
+ *
+ * @param {string} file
+ * @param {string} cwd
+ * @param {(baseUrl: string) => Promise<void>} checks
+ */
+async function smokeTestServer(file, cwd, checks) {
+  const source = await readFile(file, "utf8");
+  assert.ok(source.includes("3000"), `${file} is expected to listen on port 3000`);
   const port = await findFreePort();
-  assert.ok(code.includes("3000"), "README quick-start is expected to listen on port 3000");
-  await writeFile(join(projectDir, "server.js"), code.replaceAll("3000", String(port)));
+  await writeFile(file, source.replaceAll("3000", String(port)));
   const baseUrl = `http://127.0.0.1:${port}`;
 
-  const secret = run(process.platform === "win32" ? "npx.cmd" : "npx", ["express-authkit", "secret"], projectDir).trim();
-  const server = spawn(process.execPath, ["server.js"], {
-    cwd: projectDir,
+  // Le secret est produit par la commande documentée, depuis le package installé.
+  const secret = run(process.platform === "win32" ? "npx.cmd" : "npx", ["express-authkit", "secret"], cwd).trim();
+  const server = spawn(process.execPath, [file], {
+    cwd,
     env: { ...process.env, AUTH_SECRET: secret },
     stdio: ["ignore", "pipe", "inherit"]
   });
   try {
     await new Promise((resolveReady, reject) => {
-      const timer = setTimeout(() => reject(new Error("README server did not start")), 20_000);
+      const timer = setTimeout(() => reject(new Error(`${file} did not start`)), 20_000);
       server.stdout.on("data", (chunk) => {
         if (String(chunk).includes(`http://localhost:${port}`)) {
           clearTimeout(timer);
           resolveReady();
         }
       });
-      server.once("exit", (code) => reject(new Error(`README server exited with code ${code}`)));
+      server.once("exit", (code) => reject(new Error(`${file} exited with code ${code}`)));
     });
+    await checks(baseUrl);
+  } finally {
+    server.kill();
+  }
+}
 
+/**
+ * Vérifications communes aux démarrages rapides du README et de docs/typescript.md.
+ *
+ * @param {{ adminRoute: boolean }} options
+ * @returns {(baseUrl: string) => Promise<void>}
+ */
+function readmeLikeChecks({ adminRoute }) {
+  return async (baseUrl) => {
     const login = await fetch(`${baseUrl}/login`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ email: "alice@example.com", password: "example-password" })
     });
-    assert.equal(login.status, 200, "README login failed");
+    assert.equal(login.status, 200, "quick-start login failed");
     const { accessToken } = await login.json();
+    const authorization = { authorization: `Bearer ${accessToken}` };
 
-    const profile = await fetch(`${baseUrl}/profile`, { headers: { authorization: `Bearer ${accessToken}` } });
+    const profile = await fetch(`${baseUrl}/profile`, { headers: authorization });
     assert.deepEqual(await profile.json(), { userId: "1" });
     assert.equal((await fetch(`${baseUrl}/profile`)).status, 401);
-  } finally {
-    server.kill();
-  }
-  console.log("✔ README quick start (copied verbatim) and npx express-authkit secret");
+
+    if (adminRoute) {
+      const admin = await fetch(`${baseUrl}/admin`, { headers: authorization });
+      assert.deepEqual(await admin.json(), { roles: ["admin"] });
+    }
+  };
 }
 
 async function verifyExampleApp(workDir, tarball) {

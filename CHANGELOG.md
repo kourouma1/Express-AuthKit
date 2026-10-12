@@ -66,5 +66,9 @@ sous la rubrique **Incompatible**. L'API publique se limite aux exports de
 - **Types TypeScript** générés depuis le JSDoc (`types/*.d.ts`, champ `types` et conditions
   `types` dans `exports`), avec `req.auth` typé pour Express. Script `npm run typecheck` :
   le code source passe la vérification TypeScript en mode strict.
+- Le type de `jwt.secret` accepte `undefined` : `secret: process.env.AUTH_SECRET` compile en
+  TypeScript sans `!` (une valeur absente reste refusée au démarrage, avec un message clair).
+- Démarrage rapide TypeScript dans `docs/typescript.md`, compilé et exécuté par
+  `npm run test:package`, avec les trois différences à connaître par rapport aux exemples JavaScript.
 - `TokenProvider.issue()` est vérifié : un provider personnalisé qui renvoie un jeton mal formé
   lève une `ContractViolationError`.

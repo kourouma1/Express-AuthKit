@@ -13,7 +13,7 @@ import { assertStrongSecret } from "./secret-strength.js";
  * Options acceptées dans `createAuthKit({ jwt })`.
  *
  * @typedef {object} JwtOptions
- * @property {string | Uint8Array} secret Clé de signature partagée produite par un générateur sûr (≥ 32 octets pour HS256).
+ * @property {string | Uint8Array | undefined} secret Clé de signature partagée produite par un générateur sûr (≥ 32 octets pour HS256). Une valeur absente (par exemple une variable d’environnement non définie) est acceptée par les types mais arrête createAuthKit() avec un message clair.
  * @property {string} issuer Valeur de la revendication `iss`, contrôlée à la vérification.
  * @property {string} audience Valeur de la revendication `aud`, contrôlée à la vérification.
  * @property {number} [expiresInSeconds=900] Durée de vie du jeton (30 à 86 400 secondes).

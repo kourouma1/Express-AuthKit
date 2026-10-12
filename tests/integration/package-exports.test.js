@@ -9,6 +9,7 @@ describe("package exports", () => {
   it("exposes the documented root API", async () => {
     const root = await import("@express-authkit/core");
     assert.deepEqual(Object.keys(root).sort(), [
+      "AUDIT_EVENTS",
       "AUTH_ERROR_CODES",
       "AUTH_FAILURE_REASONS",
       "AccessDeniedError",
@@ -23,22 +24,26 @@ describe("package exports", () => {
       "InvalidTokenError",
       "TokenExpiredError",
       "TokenMissingError",
+      "TooManyAttemptsError",
+      "assertAttemptStore",
       "assertPasswordProvider",
       "assertRefreshTokenStore",
       "assertTokenProvider",
       "assertUserRepository",
       "createArgon2PasswordProvider",
       "createAuthKit",
+      "createInMemoryAttemptStore",
       "createInMemoryRefreshTokenStore",
       "createJwtTokenProvider",
       "isAuthKitError",
-      "isAuthorized"
+      "isAuthorized",
+      "isPasswordCompromised"
     ]);
   });
 
   it("exposes the Express adapter as a subpath", async () => {
     const adapter = await import("@express-authkit/core/express");
-    assert.deepEqual(Object.keys(adapter), ["createExpressAuth"]);
+    assert.deepEqual(Object.keys(adapter).sort(), ["clientKeyOf", "createExpressAuth"]);
   });
 
   it("shares error classes between entry points", async () => {

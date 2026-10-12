@@ -108,11 +108,38 @@ describe("refresh tokens", () => {
     assert.ok((await auth.refresh(phone.refreshToken)).refreshToken);
   });
 
-  it("let only one of two concurrent refreshes succeed", async () => {
+  it("treat concurrent refreshes of the same token as reuse: no new token survives", async () => {
     const { auth, login } = await createRefreshAuthKit();
     const { refreshToken } = await login();
     const results = await Promise.allSettled([auth.refresh(refreshToken), auth.refresh(refreshToken)]);
-    assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
+    // Le second appel détecte la réutilisation et ferme la session ; le premier,
+    // encore en cours, s’en aperçoit après avoir enregistré son nouveau jeton.
+    assert.deepEqual(results.map((r) => r.status), ["rejected", "rejected"]);
+    for (const result of results) {
+      assert.equal(/** @type {PromiseRejectedResult} */ (result).reason.code, "REFRESH_TOKEN_INVALID");
+    }
+  });
+
+  it("never let a rotation in progress outlive a revocation (logout, revokeAllSessions, theft)", async () => {
+    for (const revoke of ["revokeAllSessions", "logout"]) {
+      const store = createInMemoryRefreshTokenStore();
+      const { auth, users, login } = await createRefreshAuthKit({ store });
+      const { refreshToken } = await login();
+      // La révocation arrive pendant la rotation : après la consommation de
+      // l’ancien jeton, avant l’enregistrement du nouveau.
+      const findById = users.findById.bind(users);
+      users.findById = async (id) => {
+        users.findById = findById;
+        await (revoke === "logout" ? auth.logout(refreshToken) : auth.revokeAllSessions(id));
+        return findById(id);
+      };
+      const rotation = await auth.refresh(refreshToken).then((r) => r, (e) => e);
+      assert.equal(rotation.code, "REFRESH_TOKEN_INVALID", `${revoke} : la rotation aurait dû échouer`);
+      // Et aucun jeton émis pendant la course n’est utilisable.
+      if (rotation.refreshToken) {
+        await assert.rejects(auth.refresh(rotation.refreshToken));
+      }
+    }
   });
 
   it("reject unknown and expired tokens", async () => {

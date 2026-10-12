@@ -43,6 +43,9 @@ import { assertImplements } from "./assert-contract.js";
  *   normalisation (minuscules, espaces) relève de la responsabilité du dépôt.
  * @property {(id: string) => Promise<AuthUserRecord | null | undefined>} findById
  *   Cherche un utilisateur par l’identifiant contenu dans la revendication `sub`.
+ * @property {(id: string, passwordHash: string) => Promise<void>} [updatePasswordHash]
+ *   Facultatif. Enregistre un nouveau hash : permet de moderniser automatiquement les
+ *   hash dépassés lors d’une connexion réussie (voir `PasswordProvider.needsRehash`).
  */
 
 /** @type {readonly string[]} */

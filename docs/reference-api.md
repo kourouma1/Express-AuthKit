@@ -46,6 +46,8 @@ const auth = createAuthKit({
 | `jwt` | `JwtOptions` | oui, sauf si `providers.token` | Réglages des tokens. Voir [configuration JWT](configuration.md#configuration-jwt). |
 | `password` | `PasswordOptions` | non | Coûts Argon2id. Voir [configuration](configuration.md#configuration-argon2id). |
 | `refreshTokens` | `{ store, expiresInSeconds? }` | non | Active les refresh tokens. Voir [refresh tokens](refresh-tokens.md). |
+| `loginAttempts` | `LoginAttemptOptions` ou `false` | non | Limitation des tentatives, **active par défaut** (5 échecs par compte, 20 tentatives par IP, 15 min). `{ store?, maxFailuresPerIdentifier?, maxAttemptsPerClient?, windowSeconds? }`. Voir [limitation des tentatives](limitation-des-tentatives.md). |
+| `audit` | `(event: AuditEvent) => unknown` | non | Reçoit chaque événement de sécurité. Voir [journal d'audit](audit.md). |
 | `providers.password` | `PasswordProvider` | non | Remplace Argon2id. Incompatible avec `password`. |
 | `providers.token` | `TokenProvider` | non | Remplace le JWT HMAC. Incompatible avec `jwt`. |
 
@@ -58,12 +60,12 @@ Toute autre option est refusée, pour repérer les fautes de frappe.
 
 L'objet `auth` renvoyé est figé (non modifiable). Il contient les méthodes ci-dessous.
 
-#### `auth.login(credentials)` → `Promise<LoginResult>`
+#### `auth.login(credentials, context?)` → `Promise<LoginResult>`
 
 Vérifie un identifiant et un mot de passe, puis renvoie un token d'accès.
 
 ```javascript
-const result = await auth.login({ identifier: "ada@example.com", password: "…" });
+const result = await auth.login({ identifier: "ada@example.com", password: "…" }, { clientKey: clientKeyOf(req) });
 // result.accessToken → à renvoyer au client
 ```
 
@@ -71,6 +73,11 @@ const result = await auth.login({ identifier: "ada@example.com", password: "…"
 | --- | --- |
 | `credentials.identifier` | `string` (1 à 320 caractères) |
 | `credentials.password` | `string` (1 à 1 024 caractères) |
+| `context.clientKey` | `string`, facultatif : l'adresse IP du client, pour la limite par client. `expressAuth.login()` la fournit pour vous ; sinon, utilisez `clientKeyOf(req)` (module `/express`). Sans `clientKey`, seule la limite par compte s'applique. |
+
+Si le hash stocké est ancien (`needsRehash()` du provider) et que votre repository a
+`updatePasswordHash()`, le hash est recalculé et enregistré après la connexion. Un échec de
+cette mise à jour ne bloque pas la connexion (événement `password.rehash_failed`).
 
 Résultat (`LoginResult`) :
 
@@ -90,8 +97,14 @@ Résultat (`LoginResult`) :
 - `InvalidInputError` : identifiant ou mot de passe absent, vide, pas une chaîne ou trop long.
 - `InvalidCredentialsError` : compte inconnu, mauvais mot de passe ou compte désactivé.
   Le message est volontairement le même dans les trois cas.
-- `InvalidPasswordHashError` : le hash stocké en base est illisible par le provider.
+- `TooManyAttemptsError` : trop d'échecs sur ce compte ou trop de tentatives depuis ce client.
+  `error.retryAfterSeconds` indique combien de secondes attendre.
 - `ContractViolationError` : le repository a renvoyé un utilisateur mal formé.
+
+Un hash stocké illisible ne produit pas d'erreur distincte : `login()` lève
+`InvalidCredentialsError` (raison `INVALID_PASSWORD_HASH`, erreur d'origine dans `cause`) et
+émet l'avertissement Node.js `EXPRESS_AUTHKIT_PASSWORD_HASH`. Une réponse différente
+révélerait que le compte existe.
 - `DependencyFailureError` : votre repository ou un provider a planté (base indisponible…).
   L'erreur d'origine est dans `error.cause`.
 
@@ -130,10 +143,11 @@ l'option `refreshTokens`.
 **Erreurs** : `InvalidInputError` (identifiant invalide), `ConfigurationError`,
 `DependencyFailureError`.
 
-#### `auth.verifyAccessToken(token)` → `Promise<AuthPrincipal>`
+#### `auth.verifyAccessToken(token, context?)` → `Promise<AuthPrincipal>`
 
 Vérifie un token. Contrôle ensuite que l'utilisateur existe encore et que
-`isActive === true`. Renvoie l'utilisateur connecté.
+`isActive === true`. Renvoie l'utilisateur connecté. `context.clientKey` (facultatif) est
+seulement repris dans l'événement d'audit `token.rejected`.
 
 ```javascript
 const principal = await auth.verifyAccessToken(token);
@@ -220,7 +234,8 @@ const passwords = createArgon2PasswordProvider({ memoryCost: 65536, timeCost: 3,
 
 - `options` : `{ memoryCost?, timeCost?, parallelism? }`. Mêmes règles que l'option
   `password` de `createAuthKit()`.
-- Méthodes : `hash(password)` et `verify(password, hash)`, comme `auth.password`.
+- Méthodes : `hash(password)` et `verify(password, hash)`, comme `auth.password`, plus
+  `needsRehash(hash)` : `true` si le hash n'est pas un Argon2id aux réglages actuels.
 
 **Erreurs** : `ConfigurationError` à la création (coûts trop faibles ou option inconnue).
 Ensuite, mêmes erreurs que `auth.password.hash()` et `auth.password.verify()`.
@@ -250,6 +265,44 @@ const auth = createAuthKit({ users, jwt, refreshTokens: { store: createInMemoryR
 > ⚠️ Les jetons sont perdus au redémarrage et ne sont pas partagés entre serveurs. En
 > production, écrivez votre propre store ([exemple PostgreSQL](refresh-tokens.md#stocker-les-jetons-dans-postgresql)).
 
+#### `createInMemoryAttemptStore(options?)` → `AttemptStore`
+
+Le stockage **en mémoire** des compteurs de tentatives, utilisé par défaut. Inutile de
+l'appeler vous-même, sauf dans vos tests ou pour changer `maxEntries` (nombre maximal de
+compteurs, 100 000 par défaut ; au-delà, les plus anciens sont oubliés).
+
+> ⚠️ Les compteurs ne sont pas partagés entre serveurs. Avec plusieurs instances, utilisez un
+> stockage partagé ([Redis ou PostgreSQL](limitation-des-tentatives.md#plusieurs-serveurs--partager-les-compteurs)).
+
+### `isPasswordCompromised(password, options?)` → `Promise<boolean>`
+
+Indique si un mot de passe figure dans des fuites connues (service Have I Been Pwned). Seuls
+les 5 premiers caractères de son empreinte SHA-1 sont envoyés : le mot de passe ne quitte
+jamais le serveur. À utiliser à l'inscription et au changement de mot de passe.
+
+```javascript
+if (await isPasswordCompromised(req.body.password)) {
+  // refuser ce mot de passe
+}
+```
+
+| Option | Défaut | Rôle |
+| --- | --- | --- |
+| `timeoutMs` | `3000` | Délai maximal d'attente du service. |
+| `fetch` | `globalThis.fetch` | Fonction `fetch` à utiliser (tests, proxy d'entreprise). |
+| `endpoint` | `https://api.pwnedpasswords.com/range/` | Adresse du service. |
+
+**Erreurs** : `InvalidInputError` (mot de passe vide ou trop long), `DependencyFailureError`
+(service injoignable, erreur HTTP, ou réponse illisible comme une page de portail captif : à
+vous de décider s'il faut accepter ou refuser). Une réponse illisible n'est jamais lue comme
+« non compromis ». Voir
+[mots de passe compromis](mots-de-passe.md#refuser-les-mots-de-passe-compromis).
+
+### `AUDIT_EVENTS`
+
+Objet figé contenant les types d'événements d'audit (`AUDIT_EVENTS.LOGIN_FAILED` vaut
+`"login.failed"`…). La liste complète est dans [journal d'audit](audit.md#les-événements).
+
 ### Vérification des contrats
 
 Un **contrat** est la liste des méthodes qu'un objet doit avoir. Ces fonctions vérifient
@@ -265,6 +318,11 @@ assertUserRepository(myRepository); // ne fait rien si tout va bien
 | `assertPasswordProvider(value)` | `hash()`, `verify()` |
 | `assertTokenProvider(value)` | `issue()`, `verify()` |
 | `assertRefreshTokenStore(value)` | `save()`, `consume()`, `revokeFamily()`, `revokeUser()` |
+| `assertAttemptStore(value)` | `hit()`, `reset()` |
+
+Méthodes **facultatives** (non vérifiées) : `needsRehash(hash)` sur un `PasswordProvider` et
+`updatePasswordHash(id, passwordHash)` sur un `UserRepository`. Ensemble, elles permettent la
+[modernisation automatique des hash](mots-de-passe.md#moderniser-automatiquement-les-anciens-hash).
 
 Elles vérifient seulement que les méthodes existent, pas qu'elles fonctionnent.
 
@@ -295,6 +353,7 @@ try {
 | `InvalidTokenError` | `TOKEN_INVALID` | Token refusé. Propriété cachée `reason` si l'utilisateur est supprimé ou désactivé. |
 | `TokenExpiredError` | `TOKEN_EXPIRED` | Token expiré. |
 | `InvalidRefreshTokenError` | `REFRESH_TOKEN_INVALID` | Refresh token refusé. Propriété cachée `reason` : `REFRESH_TOKEN_UNKNOWN`, `REFRESH_TOKEN_EXPIRED`, `REFRESH_TOKEN_REUSED`, `USER_NOT_FOUND` ou `ACCOUNT_DISABLED`. |
+| `TooManyAttemptsError` | `TOO_MANY_ATTEMPTS` | Connexion bloquée temporairement (429). Propriétés : `retryAfterSeconds` (secondes à attendre) et `scope`, cachée (`identifier` ou `client`). |
 | `ConfigurationError` | `INVALID_CONFIGURATION` | Configuration manquante ou non sûre, au démarrage. |
 | `ContractViolationError` | `CONTRACT_VIOLATION` | Un objet injecté ne respecte pas son contrat. |
 | `InvalidPasswordHashError` | `INVALID_PASSWORD_HASH` | Hash stocké illisible. |
@@ -306,7 +365,7 @@ Autres exports :
 
 - `AUTH_ERROR_CODES` : objet figé contenant tous les codes ci-dessus.
 - `AUTH_FAILURE_REASONS` : les raisons internes `USER_NOT_FOUND`, `INVALID_PASSWORD`,
-  `ACCOUNT_DISABLED`.
+  `ACCOUNT_DISABLED`, `REFRESH_TOKEN_UNKNOWN`, `REFRESH_TOKEN_EXPIRED` et `REFRESH_TOKEN_REUSED`.
 - `isAuthKitError(value)` : renvoie `true` si `value` est une `AuthKitError`.
 
 > La propriété `reason` est **non énumérable** : elle n'apparaît pas quand l'erreur est
@@ -342,14 +401,16 @@ app.use(expressAuth.errorHandler());
 - `ContractViolationError` : `auth` n'a pas `login()` et `verifyAccessToken()`.
 - `ConfigurationError` : option inconnue ou `realm` invalide.
 
-> **N'oubliez pas les parenthèses** : écrivez `expressAuth.authenticate()`, `expressAuth.login()`
-> et `expressAuth.errorHandler()`. Sans parenthèses, la bibliothèque lève une
+> **N'oubliez pas les parenthèses** : écrivez `expressAuth.authenticate()`, `expressAuth.login()`,
+> `expressAuth.errorHandler()`, etc. (de même pour `authorize`, `refresh` et `logout`). Sans parenthèses, la bibliothèque lève une
 > `ConfigurationError` qui vous l'indique, au lieu de laisser la requête bloquée.
 
 #### `expressAuth.authorize(requirement)` → middleware
 
 Réserve une route à certains utilisateurs. Authentifie aussi la requête si besoin : inutile
 d'ajouter `authenticate()` avant.
+
+Chaque refus émet l'événement d'audit `access.denied` (avec `userId`, `client`, `method` et `path`).
 
 | Règle | Signification |
 | --- | --- |
@@ -398,8 +459,10 @@ app.post("/auth/login", express.json(), expressAuth.login({ identifierField: "em
 - Placez un parseur JSON avant lui (`express.json()`).
 - Le mot de passe est lu dans le champ `password`.
 - Succès : `200 { accessToken, tokenType: "Bearer", expiresIn }`, avec `Cache-Control: no-store`.
-- Échec : 400 (`INVALID_INPUT`, par exemple si le corps n'est pas du JSON) ou 401
-  (`INVALID_CREDENTIALS`), en JSON.
+- Échec : 400 (`INVALID_INPUT`, par exemple si le corps n'est pas du JSON), 401
+  (`INVALID_CREDENTIALS`) ou 429 (`TOO_MANY_ATTEMPTS`, avec `Retry-After`), en JSON.
+- L'adresse IP du client (`req.ip`, IPv6 regroupée par /64) est transmise à `auth.login()`
+  pour la limite par client. Derrière un proxy, réglez `trust proxy`.
 - Autre erreur : appelle `next(error)`.
 
 **Erreur** : `ConfigurationError` quand vous appelez `login()`, si `identifierField` n'est
@@ -438,12 +501,20 @@ exemple si vous appelez `auth.login()` vous-même), ainsi que les erreurs du par
 | --- | --- |
 | `INVALID_INPUT` | 400 |
 | `ACCESS_DENIED` | 403 |
+| `TOO_MANY_ATTEMPTS` | 429, avec l'en-tête `Retry-After` |
 | JSON mal formé (parseur `express.json()`) | 400, code `INVALID_INPUT` |
 | Corps trop volumineux (parseur `express.json()`) | 413, code `INVALID_INPUT` |
 | `INVALID_CREDENTIALS`, `TOKEN_MISSING`, `TOKEN_INVALID`, `TOKEN_EXPIRED`, `REFRESH_TOKEN_INVALID` | 401 |
 
 Toute autre erreur est transmise avec `next(error)`. C'est aussi le cas si la réponse a déjà
 commencé à être envoyée.
+
+#### `clientKeyOf(req)` → `string`
+
+Renvoie la clé du client utilisée pour la limite par adresse IP : l'IPv4, ou le réseau /64
+d'une IPv6 (`"2001:db8:0:0::/64"`). Une adresse inconnue ou illisible donne `"unknown"`, un
+compteur commun. À passer à `auth.login(credentials, { clientKey: clientKeyOf(req) })` quand
+vous écrivez votre propre route de connexion. Dépend de `req.ip` : réglez `trust proxy`.
 
 ---
 
@@ -488,4 +559,5 @@ Types exportés : `AuthKit`, `AuthKitOptions`, `JwtOptions`, `PasswordOptions`,
 `UserRepository`, `AuthUserRecord`, `PasswordProvider`, `TokenProvider`, `IssuedToken`,
 `VerifiedTokenClaims`, `AuthenticationService`, `LoginCredentials`, `LoginResult`,
 `AuthPrincipal`, `UserIdInput`, `AuthorizationRequirement`, `RefreshTokenOptions`, `RefreshTokenStore`,
-`RefreshTokenRecord`, `ConsumedRefreshToken`.
+`RefreshTokenRecord`, `ConsumedRefreshToken`, `LoginContext`, `LoginAttemptOptions`,
+`AttemptStore`, `AttemptCounter`, `AuditEvent`.

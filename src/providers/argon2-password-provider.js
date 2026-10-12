@@ -7,6 +7,9 @@ import { fieldRequired, fieldTooLong } from "../core/messages.js";
 
 /** Seuls les hash Argon2id sont acceptés : Argon2i et Argon2d ne sont pas recommandés pour les mots de passe. */
 const ARGON2ID_PREFIX = "$argon2id$";
+/** Format PHC : $argon2id$v=19$m=65536,t=3,p=4$sel$hash (paramètres dans un ordre quelconque). */
+const ARGON2ID_HEADER = /^\$argon2id\$v=(\d+)\$([a-z]=\d+(?:,[a-z]=\d+)*)\$/;
+const ARGON2_CURRENT_VERSION = 19;
 
 /**
  * Crée un {@link import("../core/contracts/password-provider.js").PasswordProvider}
@@ -51,7 +54,31 @@ export function createArgon2PasswordProvider(options) {
     }
   }
 
-  return Object.freeze({ hash, verify });
+  /**
+   * Un hash produit avec des coûts **plus faibles** que la configuration
+   * actuelle, ou une ancienne version d’Argon2, doit être recalculé. Un hash plus
+   * coûteux que la configuration est conservé : baisser les coûts ne doit jamais
+   * affaiblir les hash existants.
+   *
+   * @param {string} passwordHash
+   * @returns {boolean}
+   */
+  function needsRehash(passwordHash) {
+    if (typeof passwordHash !== "string" || !passwordHash.startsWith(ARGON2ID_PREFIX)) {
+      // Autre algorithme : seul un provider de migration a pu le vérifier.
+      return true;
+    }
+    const match = ARGON2ID_HEADER.exec(passwordHash);
+    const stored = Object.fromEntries((match?.[2] ?? "").split(",").map((pair) => pair.split("=")));
+    const [m, t, p] = [stored.m, stored.t, stored.p].map(Number);
+    if (match === null || !(m > 0 && t > 0 && p > 0)) {
+      // Hash illisible : on ne tente pas de le « moderniser », verify() le signale.
+      return false;
+    }
+    return Number(match[1]) < ARGON2_CURRENT_VERSION || m < parameters.memoryCost || t < parameters.timeCost || p < parameters.parallelism;
+  }
+
+  return Object.freeze({ hash, verify, needsRehash });
 }
 
 /**

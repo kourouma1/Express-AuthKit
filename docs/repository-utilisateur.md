@@ -44,6 +44,12 @@ Deux champs facultatifs, pour les [rôles et permissions](roles-et-permissions.m
 
 Ils sont relus à chaque requête et copiés dans `req.auth.roles` et `req.auth.permissions`.
 
+Une méthode facultative, pour la [modernisation automatique des hash](mots-de-passe.md#moderniser-automatiquement-les-anciens-hash) :
+
+- **`updatePasswordHash(id, passwordHash)`** : enregistre un nouveau hash. La bibliothèque
+  l'appelle après une connexion réussie quand le hash stocké utilise des réglages dépassés.
+  Sans elle, rien n'est modernisé.
+
 Vous pouvez renvoyer d'autres champs (e-mail, nom…). Ils sont ignorés : ils ne sont jamais
 copiés dans le token ni dans `req.auth`.
 
@@ -54,7 +60,10 @@ copiés dans le token ni dans `req.auth`.
 2. **`findById()` doit renvoyer le même `id`.** Une fois converti en chaîne, l'`id` renvoyé
    doit être égal à celui reçu. Sinon, la bibliothèque lève une `ContractViolationError`.
 3. **Normalisez l'identifiant** dans `findByIdentifier` : `trim()` et minuscules pour un e-mail.
-   Utilisez exactement la même normalisation à l'inscription.
+   Utilisez exactement la même normalisation à l'inscription. Évitez une recherche plus
+   permissive que celle de la [limitation des tentatives](limitation-des-tentatives.md#ce-que-la-limite-compte-exactement)
+   (par exemple une collation qui ignore les accents) : un même compte aurait alors plusieurs
+   compteurs de tentatives.
 4. **Ne levez une erreur que pour un problème technique** (base indisponible…). La bibliothèque
    l'enveloppe dans une `DependencyFailureError` (code `DEPENDENCY_FAILURE`). L'erreur
    d'origine reste dans `error.cause`. Avec l'adaptateur Express, elle arrive dans votre

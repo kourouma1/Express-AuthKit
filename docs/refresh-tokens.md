@@ -177,7 +177,9 @@ export function createPgRefreshTokenStore(pool) {
         return { ...updated.rows[0], alreadyUsed: false };
       }
       // Rien n'a été mis à jour : le jeton est inconnu, ou déjà utilisé.
-      const existing = await pool.query(`SELECT ${RETURNED_COLUMNS} FROM refresh_tokens WHERE token_hash = $1`, [
+      // « FOR SHARE » attend la fin d'une révocation en cours : un jeton en train
+      // d'être supprimé n'est jamais vu comme encore présent.
+      const existing = await pool.query(`SELECT ${RETURNED_COLUMNS} FROM refresh_tokens WHERE token_hash = $1 FOR SHARE`, [
         tokenHash
       ]);
       return existing.rows.length > 0 ? { ...existing.rows[0], alreadyUsed: true } : null;
@@ -210,8 +212,10 @@ const auth = createAuthKit({
 ```
 
 > Ce code a été exécuté sur PostgreSQL 17 : rotation, détection de réutilisation,
-> déconnexion, `revokeAllSessions()` et **10 rafraîchissements simultanés du même jeton**
-> (un seul réussit). Il ne fait pas partie de la suite de tests automatisés du dépôt.
+> déconnexion, `revokeAllSessions()` pendant une rotation en cours (aucun jeton ne survit) et
+> **10 rafraîchissements simultanés du même jeton** (traités comme une réutilisation : aucun
+> des jetons émis ne reste utilisable). Il ne fait pas partie de la suite de tests automatisés
+> du dépôt.
 
 **Étape 4 — Nettoyez les jetons expirés**
 
@@ -257,6 +261,11 @@ refreshTokens: {
   navigateur, gardez-le en mémoire plutôt que dans `localStorage` (accessible à un script
   malveillant en cas de faille XSS). Les cookies `HttpOnly` ne sont pas encore disponibles.
 - **Deux rafraîchissements simultanés** du même jeton ferment la session (voir « Côté client »).
+- **Une panne pendant un rafraîchissement déconnecte l'utilisateur.** Si la base tombe après la
+  lecture de l'ancien jeton (erreur 500), le client n'a pas reçu le nouveau. S'il renvoie
+  l'ancien, c'est une réutilisation : la session est fermée par précaution et l'événement
+  `refresh.reuse_detected` est émis. L'utilisateur doit se reconnecter. C'est le choix sûr :
+  la bibliothèque ne peut pas distinguer ce cas d'un vol.
 - **Durée glissante** : un utilisateur actif reste connecté indéfiniment, tant qu'il revient
   avant l'expiration. Il n'y a pas encore de durée maximale absolue.
 
@@ -268,14 +277,20 @@ Le contrat `RefreshTokenStore` compte quatre méthodes :
 | --- | --- | --- |
 | `save(record)` | `{ tokenHash, userId, familyId, expiresAt }` | Enregistrer le jeton. `expiresAt` est en secondes Unix. |
 | `consume(tokenHash)` | l'empreinte du jeton | Marquer le jeton comme utilisé et renvoyer `{ userId, familyId, expiresAt, alreadyUsed }`, ou `null` s'il est inconnu. |
-| `revokeFamily(familyId)` | l'identifiant de famille | Supprimer tous les jetons de cette session. |
-| `revokeUser(userId)` | l'identifiant utilisateur | Supprimer tous les jetons de cet utilisateur. |
+| `revokeFamily(familyId)` | l'identifiant de famille | Supprimer tous les jetons de cette session, utilisés ou non. `consume()` renvoie ensuite `null` pour eux. |
+| `revokeUser(userId)` | l'identifiant utilisateur | Supprimer tous les jetons de cet utilisateur, utilisés ou non. `consume()` renvoie ensuite `null` pour eux. |
 
 **Le point critique est `consume()` : il doit être atomique.** Si deux requêtes consomment le même
 jeton au même moment, une seule doit recevoir `alreadyUsed: false`. Dans l'exemple PostgreSQL,
 c'est la condition `WHERE … AND used_at IS NULL` qui le garantit. Avec Redis, utilisez une
 commande atomique, par exemple `HSETNX` sur un champ « used » : elle ne réussit que pour la
 première requête. (Cette piste n'a pas été testée.)
+
+**Deuxième point critique : une révocation doit être visible tout de suite.** Pendant une
+rotation, la bibliothèque enregistre le nouveau jeton, puis rappelle `consume()` sur l'ancien
+pour vérifier qu'aucune déconnexion ni révocation n'a eu lieu entre-temps. Si l'ancien jeton a
+disparu, le nouveau est révoqué. Il faut donc que `consume()` ne renvoie jamais un jeton en train
+d'être supprimé : dans l'exemple PostgreSQL, c'est le rôle de `FOR SHARE`.
 
 Les méthodes sont vérifiées au démarrage (`ContractViolationError` si l'une manque), et la
 réponse de `consume()` est vérifiée à chaque appel. Pour tester votre store, inspirez-vous de

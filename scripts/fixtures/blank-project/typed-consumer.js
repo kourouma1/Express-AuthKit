@@ -4,8 +4,17 @@
 // Chaque « @ts-expect-error » doit réellement produire une erreur : si les types
 // étaient absents (any), la vérification échouerait.
 import express from "express";
-import { AUTH_ERROR_CODES, createAuthKit, createInMemoryRefreshTokenStore, isAuthKitError } from "@express-authkit/core";
-import { createExpressAuth } from "@express-authkit/core/express";
+import {
+  AUDIT_EVENTS,
+  AUTH_ERROR_CODES,
+  TooManyAttemptsError,
+  createAuthKit,
+  createInMemoryAttemptStore,
+  createInMemoryRefreshTokenStore,
+  isAuthKitError,
+  isPasswordCompromised
+} from "@express-authkit/core";
+import { clientKeyOf, createExpressAuth } from "@express-authkit/core/express";
 
 /** @type {import("@express-authkit/core").UserRepository} */
 const users = {
@@ -20,8 +29,29 @@ const users = {
 const auth = createAuthKit({
   users,
   jwt: { secret: "unused-at-type-level", issuer: "my-api", audience: "my-client" },
-  refreshTokens: { store: createInMemoryRefreshTokenStore() }
+  refreshTokens: { store: createInMemoryRefreshTokenStore() },
+  loginAttempts: { store: createInMemoryAttemptStore({ maxEntries: 1000 }), maxFailuresPerIdentifier: 5 },
+  /** @param {import("@express-authkit/core").AuditEvent} event */
+  audit: (event) => {
+    /** @type {string} */
+    const type = event.type;
+    return type === AUDIT_EVENTS.LOGIN_FAILED ? event.reason : undefined;
+  }
 });
+
+/** @type {import("@express-authkit/core").AttemptStore} */
+export const redisLikeStore = {
+  async hit(key, windowSeconds) {
+    return { count: key.length, resetAt: Date.now() / 1000 + windowSeconds };
+  },
+  async reset() {}
+};
+
+/** @type {import("@express-authkit/core").LoginAttemptOptions} */
+export const attempts = { store: redisLikeStore, windowSeconds: 900 };
+
+// @ts-expect-error -- maxFailuresPerIdentifier est un nombre.
+createAuthKit({ users, jwt: { secret: "s", issuer: "i", audience: "a" }, loginAttempts: { maxFailuresPerIdentifier: "5" } });
 
 /** @param {import("@express-authkit/core").LoginResult} result */
 export function readLogin(result) {
@@ -43,6 +73,18 @@ export async function useEngine() {
   // @ts-expect-error -- login() exige un objet { identifier, password }.
   await auth.login("alice@example.com");
 
+  /** @type {boolean} */
+  const compromised = await isPasswordCompromised("secret", { timeoutMs: 1000 });
+  try {
+    await auth.login({ identifier: "alice@example.com", password: "secret" }, { clientKey: "203.0.113.7" });
+  } catch (error) {
+    if (error instanceof TooManyAttemptsError) {
+      /** @type {number} */
+      const wait = error.retryAfterSeconds;
+      return wait > 0 && compromised;
+    }
+  }
+
   try {
     await auth.verifyAccessToken("token");
   } catch (error) {
@@ -62,6 +104,11 @@ createAuthKit({ jwt: { secret: "s", issuer: "i", audience: "a" } });
 const expressAuth = createExpressAuth(auth);
 const app = express();
 app.post("/login", express.json(), expressAuth.login({ identifierField: "email" }));
+app.post("/custom-login", express.json(), async (req, res) => {
+  /** @type {string} */
+  const clientKey = clientKeyOf(req);
+  res.json(await auth.login({ identifier: req.body.email, password: req.body.password }, { clientKey }));
+});
 app.post("/refresh", express.json(), expressAuth.refresh());
 app.get("/profile", expressAuth.authenticate(), (req, res) => {
   // req.auth est typé grâce à l'augmentation de Express.Request.

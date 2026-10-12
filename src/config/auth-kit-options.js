@@ -21,10 +21,14 @@ import { assertKnownKeys, assertPlainObject } from "./assertions.js";
  * @property {import("./password-options.js").PasswordOptions} [password] Paramètres de coût Argon2id.
  * @property {import("./refresh-token-options.js").RefreshTokenOptions} [refreshTokens]
  *   Active les jetons de rafraîchissement (désactivés par défaut).
+ * @property {import("./login-attempt-options.js").LoginAttemptOptions | false} [loginAttempts]
+ *   Limitation des tentatives de connexion (activée par défaut ; `false` pour la désactiver).
+ * @property {(event: import("../core/audit.js").AuditEvent) => unknown} [audit]
+ *   Reçoit chaque événement d'audit (connexion réussie ou échouée, compte bloqué…).
  * @property {ProviderOverrides} [providers] Implémentations personnalisées des fournisseurs.
  */
 
-const ALLOWED_KEYS = Object.freeze(["users", "jwt", "password", "refreshTokens", "providers"]);
+const ALLOWED_KEYS = Object.freeze(["users", "jwt", "password", "refreshTokens", "loginAttempts", "audit", "providers"]);
 const ALLOWED_PROVIDER_KEYS = Object.freeze(["password", "token"]);
 
 /**
@@ -55,6 +59,10 @@ export function validateAuthKitOptions(options) {
   }
   if (providers.password !== undefined && options.password !== undefined) {
     throw new ConfigurationError(DEVELOPER_MESSAGES.passwordOrPasswordProvider);
+  }
+
+  if (options.audit !== undefined && typeof options.audit !== "function") {
+    throw new ConfigurationError(DEVELOPER_MESSAGES.auditHookInvalid);
   }
 
   return /** @type {AuthKitOptions} */ (options);

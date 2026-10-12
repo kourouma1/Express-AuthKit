@@ -443,3 +443,68 @@ describe("expressAuth.refresh() and expressAuth.logout()", () => {
     assert.equal((await post("/logout", { refreshToken: login.body.refreshToken })).status, 204);
   });
 });
+
+describe("Express: login attempt limiting and audit", () => {
+  let server;
+  const events = [];
+
+  before(async () => {
+    const users = createInMemoryUserRepository();
+    const auth = createAuthKit({
+      users,
+      jwt: jwtOptions(),
+      password: FAST_ARGON2,
+      loginAttempts: { maxFailuresPerIdentifier: 2, maxAttemptsPerClient: 50 },
+      audit: (event) => events.push(event)
+    });
+    const passwordHash = await auth.password.hash(TEST_PASSWORD);
+    users.users.set("u1", { id: "u1", email: "alice@example.test", passwordHash, isActive: true });
+    const expressAuth = createExpressAuth(auth);
+    const app = express();
+    app.use(express.json());
+    app.post("/login", expressAuth.login({ identifierField: "email" }));
+    app.get("/admin", expressAuth.authorize("admin"), (req, res) => res.end());
+    server = await startServer(app);
+  });
+
+  after(() => server.close());
+
+  const login = (email, password) => server.request("/login", { method: "POST", body: { email, password } });
+
+  it("answers 429 with Retry-After once the account is locked", async () => {
+    assert.equal((await login("alice@example.test", "wrong")).status, 401);
+    assert.equal((await login("alice@example.test", "wrong")).status, 401);
+    const blocked = await login("alice@example.test", TEST_PASSWORD);
+    assert.equal(blocked.status, 429);
+    assert.equal(blocked.body.error.code, "TOO_MANY_ATTEMPTS");
+    assert.match(blocked.body.error.message, /Réessayez dans 15 minutes/);
+    const retryAfter = Number(blocked.headers.get("retry-after"));
+    assert.ok(retryAfter > 800 && retryAfter <= 900, String(retryAfter));
+    assert.equal(blocked.headers.get("cache-control"), "no-store");
+  });
+
+  it("passes the client IP to the limiter and the audit", () => {
+    const failed = events.find((e) => e.type === "login.failed");
+    assert.equal(failed.client, "127.0.0.1");
+    assert.ok(events.some((e) => e.type === "account.locked"));
+  });
+
+  it("audits access denied by authorize()", async () => {
+    const other = createInMemoryUserRepository();
+    const auditEvents = [];
+    const auth = createAuthKit({ users: other, jwt: jwtOptions(), password: FAST_ARGON2, audit: (e) => auditEvents.push(e) });
+    other.users.set("u9", { id: "u9", email: "eve@example.test", passwordHash: await auth.password.hash(TEST_PASSWORD), isActive: true });
+    const app = express();
+    app.get("/admin", createExpressAuth(auth).authorize("admin"), (req, res) => res.end());
+    const local = await startServer(app);
+    try {
+      const { accessToken } = await auth.login({ identifier: "eve@example.test", password: TEST_PASSWORD });
+      const response = await local.request("/admin?debug=1", { headers: { authorization: `Bearer ${accessToken}` } });
+      assert.equal(response.status, 403);
+      const denied = auditEvents.find((e) => e.type === "access.denied");
+      assert.deepEqual({ userId: denied.userId, method: denied.method, path: denied.path }, { userId: "u9", method: "GET", path: "/admin" });
+    } finally {
+      await local.close();
+    }
+  });
+});

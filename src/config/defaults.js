@@ -64,3 +64,19 @@ export const REFRESH_TOKEN_LIMITS = Object.freeze({
   /** 90 jours au plus : au-delà, une session oubliée reste exploitable trop longtemps. */
   maxExpiresInSeconds: 7_776_000
 });
+
+/**
+ * Limitation des tentatives de connexion (recommandations OWASP).
+ * Activée par défaut : 5 échecs par compte et 20 tentatives par client, par fenêtre de 15 minutes.
+ */
+export const LOGIN_ATTEMPT_DEFAULTS = Object.freeze({
+  maxFailuresPerIdentifier: 5,
+  maxAttemptsPerClient: 20,
+  windowSeconds: 900
+});
+
+export const LOGIN_ATTEMPT_LIMITS = Object.freeze({
+  maxFailuresPerIdentifier: [1, 100],
+  maxAttemptsPerClient: [1, 100_000],
+  windowSeconds: [60, 86_400]
+});

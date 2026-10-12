@@ -55,14 +55,18 @@ export function assertStrongSecret(secret, minBytes) {
   }
 
   if (typeof secret === "string") {
+    // Un espace ou un « \r » final (fichier .env Windows) passe inaperçu et donne
+    // des clés différentes d’une instance à l’autre : on le refuse explicitement.
+    if (secret !== secret.trim()) {
+      throw new ConfigurationError(DEVELOPER_MESSAGES.secretWhitespace);
+    }
     assertStrongStringSecret(secret);
     return checkLength(new TextEncoder().encode(secret), minBytes);
   }
 
   if (secret instanceof Uint8Array) {
-    if (new Set(secret).size < MIN_DISTINCT_CHARACTERS) {
-      throw new ConfigurationError(DEVELOPER_MESSAGES.secretRepetitive);
-    }
+    // Les mêmes contrôles s’appliquent aux octets (Buffer.from("changeme…")).
+    assertStrongStringSecret(Buffer.from(secret).toString("latin1"));
     // Copie le tampon pour empêcher une modification ultérieure de changer la clé.
     return checkLength(Uint8Array.from(secret), minBytes);
   }

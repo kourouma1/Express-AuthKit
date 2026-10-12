@@ -28,15 +28,18 @@ const passwordHash = await auth.password.hash(plainPassword);
 ### Exemple complet : route d'inscription
 
 ```javascript
-import { InvalidInputError } from "@express-authkit/core";
+import { InvalidInputError, isPasswordCompromised } from "@express-authkit/core";
 
 const MIN_PASSWORD_LENGTH = 12; // OWASP : au moins 8, 12 à 15 recommandés
 
-app.post("/register", async (req, res, next) => {
+app.post("/register", express.json(), async (req, res, next) => {
   try {
     const { email, password } = req.body ?? {};
     if (typeof email !== "string" || typeof password !== "string" || password.length < MIN_PASSWORD_LENGTH) {
       throw new InvalidInputError(`Le mot de passe doit contenir au moins ${MIN_PASSWORD_LENGTH} caractères.`);
+    }
+    if (await isPasswordCompromised(password)) {
+      throw new InvalidInputError("Ce mot de passe figure dans des fuites de données connues. Choisissez-en un autre.");
     }
 
     const passwordHash = await auth.password.hash(password);
@@ -55,10 +58,11 @@ app.use(expressAuth.errorHandler()); // InvalidInputError → 400
 Ce que fait cette route :
 
 1. Elle vérifie que l'e-mail et le mot de passe sont des textes, et que le mot de passe est assez long.
-2. Elle hache le mot de passe avec `auth.password.hash()`.
-3. Elle enregistre l'utilisateur avec son hash. `db.users.create` représente votre propre base de données.
-4. Elle renvoie l'utilisateur **sans** son hash.
-5. En cas d'erreur, `errorHandler()` répond 400 pour une `InvalidInputError`.
+2. Elle refuse les mots de passe déjà apparus dans des fuites de données ([voir plus bas](#refuser-les-mots-de-passe-compromis)).
+3. Elle hache le mot de passe avec `auth.password.hash()`.
+4. Elle enregistre l'utilisateur avec son hash. `db.users.create` représente votre propre base de données.
+5. Elle renvoie l'utilisateur **sans** son hash.
+6. En cas d'erreur, `errorHandler()` répond 400 pour une `InvalidInputError`.
 
 La **règle de longueur minimale** est à vous de la fixer. La bibliothèque refuse seulement
 les mots de passe vides, non textuels ou de plus de 1 024 caractères.
@@ -83,11 +87,13 @@ Bon à savoir :
   un texte ou dépasse 1 024 caractères.
 - Si le hash stocké n'est pas au format Argon2id (bcrypt, texte brut…), elle lève une
   `InvalidPasswordHashError`. C'est un problème de données en base, pas un mauvais mot de passe.
+  (Pendant `auth.login()`, ce cas répond `401` comme un mauvais mot de passe, pour ne pas révéler
+  que le compte existe, et un avertissement `EXPRESS_AUTHKIT_PASSWORD_HASH` vous prévient.)
 
 ### Exemple : changement de mot de passe
 
 ```javascript
-app.post("/me/password", expressAuth.authenticate(), async (req, res, next) => {
+app.post("/me/password", express.json(), expressAuth.authenticate(), async (req, res, next) => {
   try {
     const { currentPassword, newPassword } = req.body ?? {};
     const user = await db.users.findById(req.auth.userId);
@@ -118,12 +124,56 @@ app.post("/me/password", expressAuth.authenticate(), async (req, res, next) => {
 > **Attention** — Les **tokens d'accès** déjà émis restent valides jusqu'à leur expiration
 > (15 minutes par défaut). Voir [révocation](securite.md#révocation-des-jwt).
 
+## Refuser les mots de passe compromis
+
+Des milliards de mots de passe ont fuité lors de piratages. Les attaquants les essaient en
+premier. `isPasswordCompromised()` vérifie si un mot de passe en fait partie, grâce au service
+gratuit **Have I Been Pwned** :
+
+```javascript
+import { isPasswordCompromised } from "@express-authkit/core";
+
+if (await isPasswordCompromised(password)) {
+  // refusez ce mot de passe et demandez-en un autre
+}
+```
+
+- **Le mot de passe ne quitte jamais votre serveur.** Seuls les 5 premiers caractères de son
+  empreinte SHA-1 sont envoyés ; le service renvoie toutes les empreintes qui commencent ainsi,
+  et la comparaison se fait chez vous (technique dite du *k-anonymat*).
+- Utilisez-la à l'**inscription** et au **changement de mot de passe**, pas à chaque connexion.
+- Si le service est injoignable, la fonction lève une `DependencyFailureError` (délai de 3 s
+  par défaut). À vous de choisir : accepter le mot de passe (en journalisant l'incident) ou
+  demander de réessayer.
+
+## Moderniser automatiquement les anciens hash
+
+Si vous augmentez un jour les coûts Argon2id, les hash déjà enregistrés restent calculés avec les
+anciens réglages. Express AuthKit peut les **recalculer automatiquement** à la prochaine connexion
+de chaque utilisateur. Il suffit d'ajouter une méthode à votre repository :
+
+```javascript
+const userRepository = {
+  async findByIdentifier(email) { /* … */ },
+  async findById(id) { /* … */ },
+  // Facultatif : enregistre le nouveau hash calculé à la connexion.
+  async updatePasswordHash(id, passwordHash) {
+    await pool.query("UPDATE users SET password_hash = $2 WHERE id = $1", [id, passwordHash]);
+  }
+};
+```
+
+À la connexion, si le hash est dépassé, la bibliothèque calcule le nouveau hash avec le mot de
+passe qui vient d'être vérifié, puis appelle `updatePasswordHash()`. Si l'enregistrement échoue,
+la connexion réussit quand même et un événement d'audit `password.rehash_failed` est émis.
+
 ## Bonnes pratiques
 
 - Ne journalisez jamais `req.body` sur les routes d'authentification : il contient le mot de passe.
 - Ne renvoyez jamais `passwordHash` dans une réponse. Choisissez explicitement les champs publics.
-- Limitez le nombre de tentatives de connexion ([rate limiting](securite.md#limitation-des-tentatives-de-connexion)).
-  Argon2id est volontairement coûteux en CPU et en mémoire : sans limite, un attaquant peut surcharger votre serveur.
+- Les tentatives de connexion sont limitées automatiquement : voir
+  [limitation des tentatives](limitation-des-tentatives.md). Pensez au stockage partagé si votre API
+  tourne sur plusieurs serveurs.
 
 ## Pour aller plus loin
 
@@ -144,4 +194,7 @@ réinitialiser leur mot de passe :
 
 1. Injectez un [`PasswordProvider` personnalisé](providers-personnalises.md#exemple--migration-depuis-bcrypt)
    qui sait vérifier les deux formats.
-2. Après chaque connexion réussie, ré-hachez le mot de passe en Argon2id.
+2. Après chaque connexion réussie, ré-hachez le mot de passe en Argon2id. Le plus simple : donnez
+   à votre provider une méthode `needsRehash: (hash) => hash.startsWith("$2")` et à votre repository
+   la méthode `updatePasswordHash()` ([voir plus haut](#moderniser-automatiquement-les-anciens-hash)) :
+   la migration se fait alors toute seule.

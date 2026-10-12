@@ -1,23 +1,24 @@
 <p align="center">
-  <img src="docs/assets/banner.jpeg" alt="Express AuthKit — authentification pour Express.js : Argon2id, JWT, middleware de protection des routes" width="100%">
+  <img src="https://raw.githubusercontent.com/kourouma1/Express-AuthKit/main/docs/assets/banner.jpeg" alt="Express AuthKit — authentification pour Express.js : Argon2id, JWT, middleware de protection des routes" width="100%">
 </p>
 
 # Express AuthKit
 
 **Ajoutez une connexion par e-mail et mot de passe à votre API Express, en quelques lignes, sans sacrifier la sécurité.**
 
-> Version 0.1.0 (candidate), pas encore publiée sur npm. Voir les [limites connues](docs/securite.md#limites-connues).
+> Version 1.0.0 : API stable, suivie selon le [versionnage sémantique](CHANGELOG.md#politique-de-versions). Voir les [limites connues](docs/securite.md#limites-connues).
 
 ---
 
 ## En bref
 
-Express AuthKit s'occupe pour vous de quatre choses :
+Express AuthKit s'occupe pour vous de cinq choses :
 
 1. **Stocker les mots de passe de façon sûre.** Vous ne gardez jamais le mot de passe, seulement une empreinte impossible à inverser.
 2. **Connecter un utilisateur.** S'il donne le bon mot de passe, il reçoit un *token* (un jeton signé, comme un badge d'accès temporaire).
 3. **Protéger vos routes.** Une route protégée refuse toute requête qui n'a pas de token valide.
 4. **Contrôler les droits.** Une route peut être réservée à un rôle (« admin ») ou à des permissions précises.
+5. **Bloquer les attaques.** Après 5 mauvais mots de passe en 15 minutes, le compte est bloqué temporairement, sans rien configurer. Chaque événement de sécurité peut être envoyé à votre journal.
 
 Vous gardez votre base de données et votre modèle d'utilisateur. Vous écrivez seulement deux petites fonctions pour dire à la bibliothèque comment retrouver un utilisateur.
 
@@ -33,7 +34,7 @@ Vous gardez votre base de données et votre modèle d'utilisateur. Vous écrivez
 
 ## Prérequis
 
-- **Node.js 22.12 ou plus récent** (la version 24 est recommandée).
+- **Node.js 22.14 ou plus récent** (la version 24 est recommandée).
 - **Express 4.21+ ou 5.x**.
 - Un projet en modules ES : `"type": "module"` dans `package.json`.
 
@@ -42,9 +43,6 @@ Vous gardez votre base de données et votre modèle d'utilisateur. Vous écrivez
 ```bash
 npm install @express-authkit/core express
 ```
-
-> Tant que le package n'est pas publié sur npm, créez l'archive avec `npm pack` dans ce dépôt,
-> puis installez-la dans votre projet : `npm install /chemin/vers/express-authkit-core-0.1.0.tgz express`.
 
 ## Démarrage en cinq minutes
 
@@ -167,6 +165,9 @@ Une application plus complète, avec ses tests, se trouve dans [examples/basic-e
 | Vérifier un mot de passe | `await auth.password.verify(password, hash)` |
 | Rester connecté plus de 15 minutes | `refreshTokens: { store }` puis `app.post("/auth/refresh", express.json(), expressAuth.refresh())` |
 | Déconnecter | `app.post("/auth/logout", express.json(), expressAuth.logout())` |
+| Régler la limite de tentatives (active par défaut) | `loginAttempts: { maxFailuresPerIdentifier: 5, store }` |
+| Journaliser connexions, échecs et blocages | `audit: (event) => logger.info(event)` |
+| Refuser un mot de passe déjà divulgué | `if (await isPasswordCompromised(password)) { … }` |
 | Générer un secret | `npx express-authkit secret` |
 
 **Votre repository** : deux fonctions, `findByIdentifier()` et `findById()`. Elles renvoient
@@ -175,7 +176,9 @@ Une application plus complète, avec ses tests, se trouve dans [examples/basic-e
 
 ## Avant de passer en production
 
-- [ ] Limitez le nombre de tentatives de connexion ([exemple prêt à copier](docs/securite.md#limitation-des-tentatives-de-connexion)).
+- [ ] Avec plusieurs serveurs, partagez les compteurs de tentatives dans Redis ou PostgreSQL ([exemples prêts à copier](docs/limitation-des-tentatives.md#plusieurs-serveurs--partager-les-compteurs)).
+- [ ] Derrière un proxy, réglez `app.set("trust proxy", 1)` (nombre exact de proxys).
+- [ ] Envoyez les [événements d'audit](docs/audit.md) dans vos journaux.
 - [ ] Servez l'API uniquement en **HTTPS**.
 - [ ] Gardez le secret hors du code, dans une variable d'environnement.
 
@@ -192,6 +195,8 @@ La liste complète se trouve dans le [guide de sécurité](docs/securite.md).
 - [Rester connecté : les refresh tokens](docs/refresh-tokens.md) (et la déconnexion)
 - [Utiliser TypeScript](docs/typescript.md) (démarrage TypeScript, différences avec les exemples JavaScript)
 - [Régler la configuration](docs/configuration.md)
+- [Limiter les tentatives de connexion](docs/limitation-des-tentatives.md) (active par défaut, plusieurs serveurs)
+- [Le journal d'audit](docs/audit.md) (connexions, échecs, blocages)
 
 **Quand quelque chose ne va pas**
 
@@ -207,7 +212,7 @@ La liste complète se trouve dans le [guide de sécurité](docs/securite.md).
 
 **Le projet** : [contribuer](CONTRIBUTING.md) · [historique des versions](CHANGELOG.md) · [signaler une faille](SECURITY.md)
 
-## Ce que la version 0.1.0 ne fait pas (encore)
+## Ce que la version 1.0 ne fait pas (encore)
 
 Pas de connexion via Google/GitHub (OAuth), pas de double authentification (MFA), pas de
 hiérarchie de rôles ni de droits par objet (ACL), pas de cookies `HttpOnly`, pas de réinitialisation de mot de passe

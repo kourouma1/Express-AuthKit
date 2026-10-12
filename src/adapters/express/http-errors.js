@@ -15,7 +15,8 @@ const CLIENT_ERROR_STATUSES = Object.freeze({
   [AUTH_ERROR_CODES.TOKEN_INVALID]: 401,
   [AUTH_ERROR_CODES.TOKEN_EXPIRED]: 401,
   [AUTH_ERROR_CODES.REFRESH_TOKEN_INVALID]: 401,
-  [AUTH_ERROR_CODES.ACCESS_DENIED]: 403
+  [AUTH_ERROR_CODES.ACCESS_DENIED]: 403,
+  [AUTH_ERROR_CODES.TOO_MANY_ATTEMPTS]: 429
 });
 
 /** Code d’erreur RFC 6750 §3.1 pour les jetons Bearer rejetés. */
@@ -73,6 +74,11 @@ export function sendClientError(res, error, status, realm) {
   if (status === 403) {
     // RFC 6750 §3.1 : droits insuffisants pour la ressource demandée.
     res.set("WWW-Authenticate", `Bearer realm="${realm}", error="insufficient_scope"`);
+  }
+  const retryAfter = /** @type {{ retryAfterSeconds?: unknown }} */ (error).retryAfterSeconds;
+  if (status === 429 && typeof retryAfter === "number") {
+    // Indique au client combien de secondes attendre avant de réessayer.
+    res.set("Retry-After", String(Math.ceil(retryAfter)));
   }
   res.set("Cache-Control", "no-store");
   res.status(status).json({ error: { code: error.code, message: error.message } });

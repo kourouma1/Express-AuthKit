@@ -8,7 +8,7 @@
  * @module core/errors
  */
 
-import { DEVELOPER_MESSAGES, PUBLIC_MESSAGES, dependencyFailed } from "./messages.js";
+import { DEVELOPER_MESSAGES, PUBLIC_MESSAGES, dependencyFailed, tooManyAttempts } from "./messages.js";
 
 /**
  * Codes d’erreur stables exposés par la bibliothèque.
@@ -33,6 +33,8 @@ export const AUTH_ERROR_CODES = Object.freeze({
   CONTRACT_VIOLATION: "CONTRACT_VIOLATION",
   /** Le fournisseur de mots de passe ne peut pas lire un hash stocké. */
   INVALID_PASSWORD_HASH: "INVALID_PASSWORD_HASH",
+  /** Trop de tentatives de connexion : le compte ou le client est temporairement bloqué. */
+  TOO_MANY_ATTEMPTS: "TOO_MANY_ATTEMPTS",
   /** L’utilisateur est authentifié mais n’a pas les rôles ou permissions requis. */
   ACCESS_DENIED: "ACCESS_DENIED",
   /** Le jeton de rafraîchissement est inconnu, expiré, déjà utilisé ou révoqué. */
@@ -54,6 +56,8 @@ export const AUTH_FAILURE_REASONS = Object.freeze({
   USER_NOT_FOUND: "USER_NOT_FOUND",
   INVALID_PASSWORD: "INVALID_PASSWORD",
   ACCOUNT_DISABLED: "ACCOUNT_DISABLED",
+  /** Hash enregistré illisible par le PasswordProvider (format inattendu, base corrompue…). */
+  INVALID_PASSWORD_HASH: "INVALID_PASSWORD_HASH",
   /** Jeton de rafraîchissement absent du stockage (jamais émis, ou révoqué). */
   REFRESH_TOKEN_UNKNOWN: "REFRESH_TOKEN_UNKNOWN",
   /** Jeton de rafraîchissement expiré. */
@@ -95,9 +99,10 @@ export class AuthKitError extends Error {
 export class InvalidCredentialsError extends AuthKitError {
   /**
    * @param {string} [reason] Raison d’audit interne (voir {@link AUTH_FAILURE_REASONS}).
+   * @param {{ cause?: unknown }} [options]
    */
-  constructor(reason) {
-    super(AUTH_ERROR_CODES.INVALID_CREDENTIALS, PUBLIC_MESSAGES.invalidCredentials);
+  constructor(reason, options = {}) {
+    super(AUTH_ERROR_CODES.INVALID_CREDENTIALS, PUBLIC_MESSAGES.invalidCredentials, options);
     // Non énumérable pour éviter une fuite accidentelle dans une réponse HTTP.
     Object.defineProperty(this, "reason", { value: reason, enumerable: false });
   }
@@ -146,6 +151,24 @@ export class TokenExpiredError extends AuthKitError {
    */
   constructor(options = {}) {
     super(AUTH_ERROR_CODES.TOKEN_EXPIRED, PUBLIC_MESSAGES.tokenExpired, options);
+  }
+}
+
+/**
+ * Trop de tentatives de connexion. Le blocage est temporaire et s’applique de la
+ * même façon à un compte existant ou inexistant (aucune fuite d’information).
+ */
+export class TooManyAttemptsError extends AuthKitError {
+  /**
+   * @param {number} retryAfterSeconds Délai avant de pouvoir réessayer.
+   * @param {"identifier" | "client"} scope Ce qui est bloqué : le compte visé ou le client (adresse IP).
+   */
+  constructor(retryAfterSeconds, scope) {
+    const seconds = Math.max(1, Math.ceil(retryAfterSeconds));
+    super(AUTH_ERROR_CODES.TOO_MANY_ATTEMPTS, tooManyAttempts(seconds));
+    /** @type {number} */
+    this.retryAfterSeconds = seconds;
+    Object.defineProperty(this, "scope", { value: scope, enumerable: false });
   }
 }
 
@@ -245,6 +268,20 @@ export async function callDependency(dependency, call) {
   } catch (error) {
     throw isAuthKitError(error) ? error : new DependencyFailureError(dependency, error);
   }
+}
+
+/**
+ * Attache l’utilisateur concerné à une erreur, pour l’audit uniquement
+ * (propriété non énumérable : jamais sérialisée dans une réponse).
+ *
+ * @template {Error} E
+ * @param {E} error
+ * @param {string | undefined} userId
+ * @returns {E}
+ */
+export function attachUserId(error, userId) {
+  Object.defineProperty(error, "userId", { value: userId, enumerable: false });
+  return error;
 }
 
 /**

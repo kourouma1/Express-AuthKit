@@ -1,8 +1,6 @@
 import express from "express";
 import { createExpressAuth } from "@express-authkit/core/express";
 
-import { createLoginRateLimiters } from "./rate-limit.js";
-
 /**
  * Construit l'application Express. Aucune dépendance n'est créée ici :
  * tout est injecté, ce qui rend l'application facile à tester.
@@ -10,15 +8,14 @@ import { createLoginRateLimiters } from "./rate-limit.js";
  * @param {object} dependencies
  * @param {import("@express-authkit/core").AuthKit} dependencies.auth
  * @param {import("./in-memory-user-repository.js").InMemoryUserRepository} dependencies.users
- * @param {import("express").RequestHandler[]} [dependencies.loginRateLimiters]
  * @param {number} [dependencies.trustProxyHops]
  */
-export function createApp({ auth, users, loginRateLimiters = createLoginRateLimiters(), trustProxyHops = 0 }) {
+export function createApp({ auth, users, trustProxyHops = 0 }) {
   const expressAuth = createExpressAuth(auth);
   const app = express();
 
   // Indispensable derrière un load balancer pour que req.ip soit l'IP du client
-  // (et non celle du proxy), sinon le rate limiting par IP est inefficace.
+  // (et non celle du proxy), sinon la limitation des tentatives par IP est inefficace.
   app.set("trust proxy", trustProxyHops);
   app.disable("x-powered-by");
   app.use(express.json({ limit: "10kb" }));
@@ -28,7 +25,8 @@ export function createApp({ auth, users, loginRateLimiters = createLoginRateLimi
   });
 
   // Handlers prêts à l'emploi : connexion, rafraîchissement et déconnexion.
-  app.post("/auth/login", ...loginRateLimiters, expressAuth.login());
+  // La limitation des tentatives est intégrée : 429 après trop d'échecs.
+  app.post("/auth/login", expressAuth.login());
   app.post("/auth/refresh", expressAuth.refresh());
   app.post("/auth/logout", expressAuth.logout());
 

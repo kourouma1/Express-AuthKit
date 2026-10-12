@@ -2,7 +2,7 @@ import { createAuthKit, createInMemoryRefreshTokenStore } from "@express-authkit
 
 import { createApp } from "./app.js";
 import { InMemoryUserRepository } from "./in-memory-user-repository.js";
-import { createLoginRateLimiters, createRedisStoreFactory } from "./rate-limit.js";
+import { createRedisAttemptStore } from "./attempt-store.redis.js";
 
 /**
  * Point d'entrée : lit l'environnement, assemble les dépendances, démarre HTTP.
@@ -10,6 +10,16 @@ import { createLoginRateLimiters, createRedisStoreFactory } from "./rate-limit.j
  */
 async function main() {
   const users = new InMemoryUserRepository();
+
+  // Plusieurs instances : les compteurs de tentatives doivent être partagés (Redis).
+  let redis;
+  if (process.env.REDIS_URL) {
+    const { createClient } = await import("redis");
+    redis = createClient({ url: process.env.REDIS_URL });
+    await redis.connect();
+  } else {
+    console.warn("REDIS_URL non défini : compteurs de tentatives en mémoire (une seule instance).");
+  }
 
   const auth = createAuthKit({
     users,
@@ -21,20 +31,17 @@ async function main() {
     },
     // En mémoire pour la démonstration : en production, utilisez votre base
     // de données (voir docs/refresh-tokens.md).
-    refreshTokens: { store: createInMemoryRefreshTokenStore() }
+    refreshTokens: { store: createInMemoryRefreshTokenStore() },
+    loginAttempts: redis ? { store: createRedisAttemptStore(redis) } : {},
+    // Journal d'audit : une ligne JSON par événement (jamais de mot de passe ni de jeton).
+    audit: (event) => console.log(JSON.stringify({ audit: event.type, ...event }))
   });
 
   await seedDemoUser(auth, users);
 
-  const redis = process.env.REDIS_URL ? await createRedisStoreFactory(process.env.REDIS_URL) : undefined;
-  if (!redis) {
-    console.warn("REDIS_URL non défini : compteurs de rate limiting en mémoire (une seule instance).");
-  }
-
   const app = createApp({
     auth,
     users,
-    loginRateLimiters: createLoginRateLimiters({ createStore: redis?.createStore }),
     trustProxyHops: Number.parseInt(process.env.TRUST_PROXY_HOPS ?? "0", 10)
   });
 

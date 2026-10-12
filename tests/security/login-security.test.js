@@ -6,6 +6,7 @@ import {
   InvalidCredentialsError,
   InvalidPasswordHashError,
   InvalidTokenError,
+  TooManyAttemptsError,
   createAuthKit
 } from "../../src/index.js";
 import {
@@ -130,11 +131,39 @@ describe("login security", () => {
     await assert.rejects(auth.password.verify("x", "h"), (error) => error.code === "DEPENDENCY_FAILURE");
   });
 
-  it("surfaces unreadable stored hashes as server errors, not as wrong passwords", async () => {
+  it("treats unreadable stored hashes as ordinary failures (no account enumeration), counts and reports them", async () => {
     const repository = createInMemoryUserRepository([
       { id: "legacy", email: "legacy@example.test", passwordHash: "$2b$10$legacybcrypthash", isActive: true }
     ]);
-    const auth = createAuthKit({ users: repository, jwt: jwtOptions(), password: FAST_ARGON2 });
-    await assert.rejects(auth.login({ identifier: "legacy@example.test", password: "x" }), InvalidPasswordHashError);
+    const events = [];
+    const warnings = [];
+    const onWarning = (w) => warnings.push(w);
+    process.on("warning", onWarning);
+    try {
+      const auth = createAuthKit({
+        users: repository,
+        jwt: jwtOptions(),
+        password: FAST_ARGON2,
+        loginAttempts: { maxFailuresPerIdentifier: 2 },
+        audit: (e) => events.push(e)
+      });
+      const attempt = () => auth.login({ identifier: "legacy@example.test", password: "x" });
+      await assert.rejects(attempt(), (error) => {
+        assert.ok(error instanceof InvalidCredentialsError);
+        assert.equal(error.reason, AUTH_FAILURE_REASONS.INVALID_PASSWORD_HASH);
+        assert.ok(error.cause instanceof InvalidPasswordHashError);
+        return true;
+      });
+      await assert.rejects(attempt(), InvalidCredentialsError);
+      await assert.rejects(attempt(), TooManyAttemptsError);
+      await new Promise((resolve) => setImmediate(resolve));
+    } finally {
+      process.off("warning", onWarning);
+    }
+    assert.deepEqual(events.filter((e) => e.type === "login.failed").map((e) => [e.reason, e.userId]), [
+      ["INVALID_PASSWORD_HASH", "legacy"],
+      ["INVALID_PASSWORD_HASH", "legacy"]
+    ]);
+    assert.ok(warnings.some((w) => w.code === "EXPRESS_AUTHKIT_PASSWORD_HASH"));
   });
 });

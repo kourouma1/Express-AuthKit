@@ -6,7 +6,6 @@ import { createAuthKit, createInMemoryRefreshTokenStore } from "@express-authkit
 
 import { createApp } from "../src/app.js";
 import { InMemoryUserRepository } from "../src/in-memory-user-repository.js";
-import { createLoginRateLimiters } from "../src/rate-limit.js";
 
 const PASSWORD = "a long and unique passphrase";
 
@@ -22,11 +21,12 @@ describe("example application", () => {
       users,
       jwt: { secret: randomBytes(48).toString("base64url"), issuer: "example", audience: "example-client" },
       password: { memoryCost: 19_456, timeCost: 2, parallelism: 1 },
-      refreshTokens: { store: createInMemoryRefreshTokenStore() }
+      refreshTokens: { store: createInMemoryRefreshTokenStore() },
+      loginAttempts: { maxFailuresPerIdentifier: 3 }
     });
     demoUser = users.create({ email: "Alice@Example.test", name: "Alice", passwordHash: await auth.password.hash(PASSWORD) });
 
-    const app = createApp({ auth, users, loginRateLimiters: createLoginRateLimiters({ perIdentifierLimit: 3 }) });
+    const app = createApp({ auth, users });
     server = app.listen(0, "127.0.0.1");
     await new Promise((resolve) => server.once("listening", resolve));
     baseUrl = `http://127.0.0.1:${server.address().port}`;
@@ -126,5 +126,7 @@ describe("example application", () => {
       statuses.push((await login("target@example.test", "wrong password")).status);
     }
     assert.deepEqual(statuses, [401, 401, 401, 429]);
+    const blocked = await login("target@example.test", "wrong password");
+    assert.ok(Number(blocked.headers.get("retry-after")) > 0);
   });
 });

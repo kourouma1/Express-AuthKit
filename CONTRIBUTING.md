@@ -4,7 +4,7 @@ Merci de votre intérêt ! Ce guide explique comment proposer une modification.
 
 ## Prérequis
 
-- Node.js 22.12 ou plus récent (24 LTS recommandé, voir `.nvmrc`).
+- Node.js 22.14 ou plus récent (24 LTS recommandé, voir `.nvmrc`).
 - npm 10 ou plus récent.
 
 ## Mise en place
@@ -13,7 +13,7 @@ Merci de votre intérêt ! Ce guide explique comment proposer une modification.
 git clone https://github.com/kourouma1/Express-AuthKit.git
 cd Express-AuthKit
 npm install
-npm run check        # lint + tests
+npm run check        # lint + typecheck + tests
 ```
 
 ## Scripts disponibles
@@ -23,7 +23,7 @@ npm run check        # lint + tests
 | `npm test`              | Lance tous les tests (Node.js Test Runner).                          |
 | `npm run test:coverage` | Lance les tests avec rapport de couverture.                          |
 | `npm run lint`          | Analyse statique avec ESLint.                                        |
-| `npm run check`         | Lint puis tests (exécuté aussi avant `npm publish`).                 |
+| `npm run check`         | Lint, typecheck strict puis tests (exécuté aussi avant `npm publish`). |
 | `npm run test:package`  | Empaquette la bibliothèque et la teste dans un projet vierge (réseau requis). |
 
 ## Règles du projet

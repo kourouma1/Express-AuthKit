@@ -10,7 +10,7 @@ une route de connexion et une route protégée. Ensuite, choisissez la page qui 
 | --- | --- |
 | Brancher ma base de données (PostgreSQL, Prisma, MongoDB…) | [Repository utilisateur](repository-utilisateur.md) |
 | Connecter mes utilisateurs et protéger des routes | [Connexion et routes](connexion-et-routes.md) |
-| Gérer l'inscription et le changement de mot de passe | [Mots de passe](mots-de-passe.md) |
+| Gérer l'inscription, le changement de mot de passe, refuser les mots de passe compromis | [Mots de passe](mots-de-passe.md) |
 | Changer la durée des tokens ou le secret | [Configuration](configuration.md) |
 | Garder l'utilisateur connecté et gérer la déconnexion | [Refresh tokens](refresh-tokens.md) |
 | Réserver des routes à certains rôles ou permissions | [Rôles et permissions](roles-et-permissions.md) |
@@ -27,7 +27,9 @@ une route de connexion et une route protégée. Ensuite, choisissez la page qui 
 
 | Sujet | Page |
 | --- | --- |
-| Check-list de sécurité, limitation des tentatives, limites connues | [Sécurité](securite.md) |
+| Check-list de sécurité, limites connues | [Sécurité](securite.md) |
+| Bloquer les attaques par force brute (active par défaut), plusieurs serveurs | [Limitation des tentatives](limitation-des-tentatives.md) |
+| Garder une trace des connexions, échecs et accès refusés | [Journal d'audit](audit.md) |
 | Toutes les fonctions disponibles | [Référence de l'API](reference-api.md) |
 
 ## Je veux aller plus loin

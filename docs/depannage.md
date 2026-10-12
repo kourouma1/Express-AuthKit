@@ -90,7 +90,8 @@ Le `code` de l'erreur (`INVALID_CREDENTIALS`, `TOKEN_MISSING`…) est dans la r�
   2. **`isActive`** doit valoir exactement `true` (pas `1`, ni `"true"`). Une valeur qui n'est
      ni `true` ni `false` lève d'ailleurs une `ContractViolationError`.
   3. **Le hash** doit venir de `auth.password.hash()`. Il commence par `$argon2id$`.
-  4. Journalisez `error.reason` **côté serveur** pour connaître la cause exacte
+  4. Regardez la raison exacte dans votre [journal d'audit](audit.md) (événement
+     `login.failed`) ou journalisez `error.reason` **côté serveur** pour connaître la cause exacte
      (`USER_NOT_FOUND`, `INVALID_PASSWORD`, `ACCOUNT_DISABLED`). Ne l'envoyez jamais au client
      (voir [erreurs](erreurs.md#journaliser-les-échecs-de-connexion)).
 
@@ -107,14 +108,21 @@ Le `code` de l'erreur (`INVALID_CREDENTIALS`, `TOKEN_MISSING`…) est dans la r�
 - **Cause probable** : le champ attendu est absent du corps JSON. Par défaut, ce champ
   s'appelle `identifier`.
 - **Solution** : si votre formulaire envoie `email`, configurez
-  `expressAuth.login({ identifierField: "email" })`. Le message cite toujours `identifier`,
-  même avec un autre nom de champ.
+  `expressAuth.login({ identifierField: "email" })`. Le message cite alors le champ configuré.
 
-### Erreur 500 avec `InvalidPasswordHashError`
+### Avertissement `EXPRESS_AUTHKIT_PASSWORD_HASH` (et `401` à la connexion)
 
 - **Cause probable** : le hash stocké n'est pas au format Argon2id (bcrypt, SHA-256, texte
-  brut…).
+  brut…). Pour ne pas révéler que le compte existe, la connexion répond le même `401` qu'un
+  mauvais mot de passe ; l'événement d'audit `login.failed` porte la raison
+  `INVALID_PASSWORD_HASH`.
 - **Solution** : voir [migration depuis bcrypt](providers-personnalises.md#exemple--migration-depuis-bcrypt).
+
+### Avertissement `EXPRESS_AUTHKIT_REHASH`
+
+- **Cause** : la modernisation automatique d'un hash a échoué (`updatePasswordHash()` a levé une
+  erreur, base en lecture seule…). La connexion a réussi.
+- **Solution** : corrigez `updatePasswordHash()` ; le détail de l'erreur est dans l'avertissement.
 
 ### Erreur 500 avec `ContractViolationError` pendant une requête
 
@@ -140,7 +148,8 @@ Le `code` de l'erreur (`INVALID_CREDENTIALS`, `TOKEN_MISSING`…) est dans la r�
 ### « expressAuth.authenticate doit être appelé avec des parenthèses »
 
 - **Cause probable** : vous avez écrit `expressAuth.authenticate` au lieu de
-  `expressAuth.authenticate()` (idem pour `login` et `errorHandler`).
+  `expressAuth.authenticate()` (idem pour `authorize`, `login`, `refresh`, `logout` et
+  `errorHandler`).
 - **Solution** : ajoutez les parenthèses :
 
   ```javascript
@@ -222,7 +231,23 @@ Le `code` de l'erreur (`INVALID_CREDENTIALS`, `TOKEN_MISSING`…) est dans la r�
 
 - **Cause probable** : l'application est derrière un proxy et `trust proxy` n'est pas configuré.
   `req.ip` contient alors l'adresse du proxy, la même pour tout le monde.
-- **Solution** : voir [limitation des tentatives](securite.md#limitation-des-tentatives-de-connexion).
+- **Solution** : indiquez le nombre exact de proxys, par exemple `app.set("trust proxy", 1)`.
+  Voir [derrière un proxy](limitation-des-tentatives.md#derrière-un-proxy-ou-un-load-balancer).
+
+### `429 TOO_MANY_ATTEMPTS` : « Trop de tentatives de connexion »
+
+- **Cause** : 5 échecs sur ce compte, ou 20 tentatives depuis cette adresse IP, en 15 minutes.
+  Ce n'est pas un bug : c'est la [limitation des tentatives](limitation-des-tentatives.md).
+- **Solution** : attendez la durée indiquée par l'en-tête `Retry-After`. En développement,
+  redémarrer le serveur remet les compteurs en mémoire à zéro. Dans vos tests automatisés,
+  baissez ou désactivez la limite : `loginAttempts: false`.
+
+### Avertissement `EXPRESS_AUTHKIT_AUDIT` dans la console
+
+- **Cause** : votre fonction `audit` a levé une erreur (ou sa promesse a échoué). La connexion,
+  elle, a fonctionné normalement.
+- **Solution** : corrigez la fonction ; le détail de l'erreur est dans l'avertissement. Voir
+  [journal d'audit](audit.md#ce-quil-faut-savoir).
 
 ## Pour aller plus loin
 

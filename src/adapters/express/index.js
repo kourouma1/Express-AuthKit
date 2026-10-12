@@ -7,6 +7,7 @@
  * @module @express-authkit/core/express
  */
 
+import { AUDIT_EMITTER, AUDIT_EVENTS } from "../../core/audit.js";
 import { assertImplements } from "../../core/contracts/assert-contract.js";
 import { normalizeAuthorizationRequirement, isAuthorized } from "../../core/authorization.js";
 import { AccessDeniedError, ConfigurationError, InvalidInputError } from "../../core/errors.js";
@@ -20,6 +21,9 @@ import {
 } from "../../core/messages.js";
 import { assertKnownKeys, assertPlainObject } from "../../config/assertions.js";
 import { extractBearerToken } from "./bearer-token.js";
+import { clientKeyOf } from "./client-key.js";
+
+export { clientKeyOf } from "./client-key.js";
 import { getClientErrorStatus, resolveClientError, sendClientError } from "./http-errors.js";
 
 /**
@@ -80,6 +84,8 @@ export function createExpressAuth(auth, options = {}) {
   assertKnownKeys(options, ["realm"], "createExpressAuth(auth, options)");
 
   const realm = options.realm ?? DEFAULT_REALM;
+  /** @type {(type: string, details?: Record<string, unknown>) => void} */
+  const emitAudit = /** @type {any} */ (auth)[AUDIT_EMITTER] ?? (() => {});
 
   /**
    * Requêtes authentifiées par cette instance. `authorize()` ne fait confiance
@@ -107,15 +113,9 @@ export function createExpressAuth(auth, options = {}) {
     return async function authenticateRequest(req, res, next) {
       let principal;
       try {
-        const token = extractBearerToken(req.headers.authorization);
-        principal = await auth.verifyAccessToken(token);
+        principal = await verifyRequest(req);
       } catch (error) {
-        const status = getClientErrorStatus(error);
-        if (status !== undefined) {
-          sendClientError(res, /** @type {import("../../core/errors.js").AuthKitError} */ (error), status, realm);
-          return;
-        }
-        next(error);
+        failRequest(error, res, next);
         return;
       }
       setPrincipal(req, principal);
@@ -149,15 +149,11 @@ export function createExpressAuth(auth, options = {}) {
       try {
         const principal = await resolvePrincipal(req);
         if (!(await isAuthorized(principal, rules, req))) {
+          emitAudit(AUDIT_EVENTS.ACCESS_DENIED, { userId: principal.userId, client: clientKeyOf(req), method: req.method, path: req.path });
           throw new AccessDeniedError();
         }
       } catch (error) {
-        const status = getClientErrorStatus(error);
-        if (status !== undefined) {
-          sendClientError(res, /** @type {import("../../core/errors.js").AuthKitError} */ (error), status, realm);
-          return;
-        }
-        next(error);
+        failRequest(error, res, next);
         return;
       }
       next();
@@ -176,9 +172,35 @@ export function createExpressAuth(auth, options = {}) {
     if (existing !== undefined) {
       return existing;
     }
-    const principal = await auth.verifyAccessToken(extractBearerToken(req.headers.authorization));
+    const principal = await verifyRequest(req);
     setPrincipal(req, principal);
     return principal;
+  }
+
+  /**
+   * @param {import("express").Request} req
+   * @returns {Promise<import("../../core/contracts/auth-principal.js").AuthPrincipal>}
+   */
+  function verifyRequest(req) {
+    return auth.verifyAccessToken(extractBearerToken(req.headers.authorization), { clientKey: clientKeyOf(req) });
+  }
+
+  /**
+   * Réponse commune à toutes les erreurs : JSON pour les erreurs client
+   * (400, 401, 403, 429), `next(error)` pour les autres ou si la réponse a
+   * déjà commencé.
+   *
+   * @param {unknown} error
+   * @param {import("express").Response} res
+   * @param {import("express").NextFunction} next
+   */
+  function failRequest(error, res, next) {
+    const status = getClientErrorStatus(error);
+    if (status !== undefined && !res.headersSent) {
+      sendClientError(res, /** @type {import("../../core/errors.js").AuthKitError} */ (error), status, realm);
+      return;
+    }
+    next(error);
   }
 
   /**
@@ -213,28 +235,22 @@ export function createExpressAuth(auth, options = {}) {
     assertCalledAsFactory("login", unexpectedArguments);
     const identifierField = resolveIdentifierField(loginOptions);
 
-    return async function loginRequest(req, res, next) {
-      let result;
-      try {
-        const body = readJsonBody(req);
-        // Object.hasOwn évite de lire une propriété héritée du prototype.
-        const identifier = Object.hasOwn(body, identifierField) ? body[identifierField] : undefined;
-        const password = Object.hasOwn(body, "password") ? body.password : undefined;
-        // Vérifié ici pour que le message cite le vrai nom du champ (« email »…).
-        assertIdentifierField(identifier, identifierField);
-        // Le type exact du mot de passe est vérifié par auth.login().
-        result = await auth.login({ identifier, password: /** @type {string} */ (password) });
-      } catch (error) {
-        const status = getClientErrorStatus(error);
-        if (status !== undefined) {
-          sendClientError(res, /** @type {import("../../core/errors.js").AuthKitError} */ (error), status, realm);
-          return;
-        }
-        next(error);
+    return handleJson(async (body, res, req) => {
+      // Object.hasOwn évite de lire une propriété héritée du prototype.
+      const identifier = Object.hasOwn(body, identifierField) ? body[identifierField] : undefined;
+      const password = Object.hasOwn(body, "password") ? body.password : undefined;
+      // Vérifié ici pour que le message cite le vrai nom du champ (« email »…).
+      assertIdentifierField(identifier, identifierField);
+      // Le client a déjà fermé la connexion : personne n’attend la réponse. Ne
+      // rien calculer évite qu’une rafale de requêtes interrompues fasse
+      // travailler Argon2id (et verrouille des comptes) sans être vue.
+      if (req.socket?.destroyed) {
         return;
       }
+      // Le type exact du mot de passe est vérifié par auth.login().
+      const result = await auth.login({ identifier, password: /** @type {string} */ (password) }, { clientKey: clientKeyOf(req) });
       sendSession(res, result);
-    };
+    });
   }
 
   /**
@@ -279,20 +295,15 @@ export function createExpressAuth(auth, options = {}) {
    * Enveloppe commune des gestionnaires qui lisent un corps JSON : les
    * erreurs client reçoivent une réponse JSON, les autres vont à `next()`.
    *
-   * @param {(body: Record<string, unknown>, res: import("express").Response) => Promise<void>} handle
+   * @param {(body: Record<string, unknown>, res: import("express").Response, req: import("express").Request) => Promise<void>} handle
    * @returns {import("express").RequestHandler}
    */
   function handleJson(handle) {
     return async function jsonRequest(req, res, next) {
       try {
-        await handle(readJsonBody(req), res);
+        await handle(readJsonBody(req), res, req);
       } catch (error) {
-        const status = getClientErrorStatus(error);
-        if (status !== undefined && !res.headersSent) {
-          sendClientError(res, /** @type {import("../../core/errors.js").AuthKitError} */ (error), status, realm);
-          return;
-        }
-        next(error);
+        failRequest(error, res, next);
       }
     };
   }

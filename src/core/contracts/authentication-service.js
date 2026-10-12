@@ -7,6 +7,14 @@
  */
 
 /**
+ * Informations sur la requête de connexion, pour la limitation des tentatives et l'audit.
+ *
+ * @typedef {object} LoginContext
+ * @property {string} [clientKey] Identifiant du client, en général son adresse IP.
+ *   L'adaptateur Express le renseigne automatiquement.
+ */
+
+/**
  * Résultat d’une connexion réussie, envoyable tel quel dans une réponse HTTP.
  *
  * @typedef {object} LoginResult
@@ -28,7 +36,7 @@
  * Cas d’usage d’authentification indépendants du framework.
  *
  * @typedef {object} AuthenticationService
- * @property {(credentials: LoginCredentials) => Promise<LoginResult>} login
+ * @property {(credentials: LoginCredentials, context?: LoginContext) => Promise<LoginResult>} login
  *   Authentifie un utilisateur. Renvoie `InvalidCredentialsError` pour un
  *   utilisateur inconnu, un mauvais mot de passe ou un compte désactivé.
  * @property {(refreshToken: string) => Promise<LoginResult>} refresh
@@ -37,7 +45,7 @@
  *   Révoque la session liée au jeton de rafraîchissement.
  * @property {(userId: UserIdInput) => Promise<void>} revokeAllSessions
  *   Révoque toutes les sessions d’un utilisateur.
- * @property {(token: string) => Promise<import("./auth-principal.js").AuthPrincipal>} verifyAccessToken
+ * @property {(token: string, context?: LoginContext) => Promise<import("./auth-principal.js").AuthPrincipal>} verifyAccessToken
  *   Vérifie un jeton et contrôle que son utilisateur existe et est toujours actif.
  */
 

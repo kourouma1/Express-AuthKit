@@ -23,16 +23,16 @@ const auth = createAuthKit({ users: userRepository, jwt: { /* … */ } });
 const expressAuth = createExpressAuth(auth);
 
 const app = express();
-app.post("/auth/login", express.json({ limit: "10kb" }), loginRateLimiters, expressAuth.login());
+app.post("/auth/login", express.json({ limit: "10kb" }), expressAuth.login());
 ```
 
 - `express.json()` lit le corps JSON. Placez-le **avant** `expressAuth.login()`.
 - `expressAuth.login()` vérifie les identifiants et renvoie le token.
 - Vous choisissez l'URL. La bibliothèque ne crée aucune route toute seule.
 
-> **Limitez les tentatives de connexion.** Sans limite, un attaquant peut essayer des milliers
-> de mots de passe (attaque par force brute). Pour créer `loginRateLimiters`, voir
-> [limitation des tentatives](securite.md#limitation-des-tentatives-de-connexion).
+> **Les tentatives sont déjà limitées.** Après 5 échecs sur un compte (ou 20 tentatives depuis
+> une même adresse IP) en 15 minutes, la route répond 429. Avec plusieurs serveurs ou derrière
+> un proxy, lisez [limitation des tentatives](limitation-des-tentatives.md).
 
 Le client envoie :
 
@@ -66,10 +66,11 @@ app.post("/auth/login", express.json(), expressAuth.login({ identifierField: "em
 | Corps absent ou non JSON | 400 | `INVALID_INPUT` (le message indique d'envoyer `Content-Type: application/json`) |
 | Champ manquant, vide ou trop long | 400 | `INVALID_INPUT` |
 | Compte inconnu, mot de passe faux ou compte désactivé | 401 | `INVALID_CREDENTIALS` |
+| Trop d'échecs sur ce compte ou trop de tentatives depuis cette IP | 429, avec `Retry-After` | `TOO_MANY_ATTEMPTS` |
 | Erreur inattendue (base indisponible…) | transmise à `next(error)` | — |
 
 Le statut est le code de la réponse HTTP. **400** veut dire « requête mal formée ».
-**401** veut dire « non authentifié ».
+**401** veut dire « non authentifié ». **429** veut dire « trop de requêtes, patientez ».
 
 ## Étape 2 : protéger une route
 
@@ -102,6 +103,8 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6ImF0K2p3dCJ9…
 | `tokenId` | Identifiant unique du token (`jti`), utile pour l'audit. |
 | `issuedAt` | Date d'émission (secondes Unix). |
 | `expiresAt` | Date d'expiration (secondes Unix). |
+| `roles` | Rôles de l'utilisateur, relus en base à chaque requête (`[]` par défaut). |
+| `permissions` | Permissions de l'utilisateur, relues en base à chaque requête (`[]` par défaut). |
 
 « Secondes Unix » : nombre de secondes depuis le 1er janvier 1970.
 
@@ -145,7 +148,8 @@ Toutes les routes du routeur exigent un token valide.
 { "error": { "code": "TOKEN_EXPIRED", "message": "Jeton d’accès expiré." } }
 ```
 
-Quand le client reçoit `TOKEN_EXPIRED`, il redemande une connexion.
+Quand le client reçoit `TOKEN_EXPIRED`, il obtient un nouveau token avec son
+[refresh token](refresh-tokens.md) s'il en a un, sinon il redemande une connexion.
 
 > Pour réserver une route à certains utilisateurs (administrateurs, permissions…), utilisez
 > `expressAuth.authorize()` : voir [rôles et permissions](roles-et-permissions.md).
@@ -177,12 +181,14 @@ Pour un autre format de réponse (ajouter le profil, journaliser l'échec…), a
 `auth.login()` vous-même. Ajoutez alors `expressAuth.errorHandler()` **après** vos routes :
 
 ```javascript
-app.post("/auth/login", express.json(), loginRateLimiters, async (req, res, next) => {
+import { clientKeyOf } from "@express-authkit/core/express";
+
+app.post("/auth/login", express.json(), async (req, res, next) => {
   try {
-    const result = await auth.login({
-      identifier: req.body?.email,
-      password: req.body?.password
-    });
+    const result = await auth.login(
+      { identifier: req.body?.email, password: req.body?.password },
+      { clientKey: clientKeyOf(req) } // pour la limite par adresse IP
+    );
     res.set("Cache-Control", "no-store");
     res.json({
       accessToken: result.accessToken,
@@ -201,23 +207,28 @@ app.use(expressAuth.errorHandler());
 
 1. Valide l'entrée : `identifier` et `password` doivent être des chaînes non vides
    (au plus 320 et 1 024 caractères). Sinon : `InvalidInputError` → **400**.
-2. Appelle `users.findByIdentifier(identifier)`.
-3. Utilisateur inconnu : vérifie quand même le mot de passe contre un hash factice (même durée
+2. Vérifie que ce compte et cette adresse IP ne sont pas bloqués. Sinon :
+   `TooManyAttemptsError` → **429**, sans même regarder le mot de passe.
+3. Appelle `users.findByIdentifier(identifier)`.
+4. Utilisateur inconnu : vérifie quand même le mot de passe contre un hash factice (même durée
    qu'un vrai compte), puis lève `InvalidCredentialsError` → **401**.
-4. Mot de passe faux : `InvalidCredentialsError` → **401**.
-5. `isActive !== true` : `InvalidCredentialsError` → **401**.
-6. Émet un JWT d'accès et renvoie :
+5. Mot de passe faux : `InvalidCredentialsError` → **401**.
+6. `isActive !== true` : `InvalidCredentialsError` → **401**.
+   Les cas 4, 5 et 6 comptent comme un échec pour la limitation des tentatives.
+7. Succès : remet le compteur du compte à zéro et, si besoin, modernise le hash du mot de
+   passe ([détails](mots-de-passe.md#moderniser-automatiquement-les-anciens-hash)).
+8. Émet un JWT d'accès et renvoie :
 
 ```javascript
 {
   accessToken: "eyJhbGciOiJIUzI1NiIsInR5cCI6ImF0K2p3dCJ9…",
   tokenType: "Bearer",
   expiresIn: 900,
-  principal: { userId: "42", tokenId: "…", issuedAt: 1760000000, expiresAt: 1760000900 }
+  principal: { userId: "42", tokenId: "…", issuedAt: 1760000000, expiresAt: 1760000900, roles: [], permissions: [] }
 }
 ```
 
-Les cas 3, 4 et 5 donnent **exactement la même erreur publique** (`INVALID_CREDENTIALS`,
+Les cas 4, 5 et 6 donnent **exactement la même erreur publique** (`INVALID_CREDENTIALS`,
 « Identifiants invalides. »). Un attaquant ne peut donc pas savoir si un compte existe.
 La vraie raison est disponible côté serveur dans `error.reason`
 (voir [erreurs](erreurs.md#journaliser-les-échecs-de-connexion)).

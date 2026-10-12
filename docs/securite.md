@@ -10,7 +10,8 @@ production.
 Cochez chaque point. Chacun est expliqué plus bas.
 
 - [ ] L'API est servie **uniquement en HTTPS**, avec HSTS activé ([détails](#https-obligatoire)).
-- [ ] La route de connexion **limite le nombre de tentatives** ([détails](#limitation-des-tentatives-de-connexion)).
+- [ ] La limitation des tentatives utilise un **stockage partagé** si vous avez plusieurs instances, et `trust proxy` est réglé ([détails](#limitation-des-tentatives-de-connexion)).
+- [ ] Les événements d'audit sont **enregistrés** dans vos journaux ([journal d'audit](audit.md)).
 - [ ] Le secret JWT est généré avec `npx express-authkit secret` et n'est jamais commité ([détails](#rotation-du-secret)).
 - [ ] La durée de vie des tokens reste **courte** (15 minutes par défaut) ([détails](#révocation-des-jwt)).
 - [ ] Vous savez **couper l'accès** d'un utilisateur : désactiver son compte ([détails](#révocation-des-jwt)).
@@ -37,7 +38,10 @@ Cochez chaque point. Chacun est expliqué plus bas.
 | Hash du mot de passe protégé | Jamais renvoyé par `login()`, jamais placé dans `req.auth`. | `tests/unit/authentication-service.test.js` |
 | Entrées vérifiées | Types et longueurs contrôlés avant tout calcul coûteux. | `tests/unit/authentication-service.test.js` |
 | Erreurs HTTP sobres | Seuls un code et un message public sont envoyés. Jamais la pile d'appels, la cause ni la raison interne. | `tests/integration/express.test.js` |
-| Aucun log | La bibliothèque n'écrit rien dans la console. | `tests/unit/architecture.test.js` |
+| Limitation des tentatives | 5 échecs par compte et 20 tentatives par IP en 15 min, puis 429. Tentatives comptées avant la vérification, de façon atomique : des requêtes parallèles ne dépassent pas la limite. Comptes inexistants bloqués de la même façon (pas d'énumération). Identifiants et IP pseudonymisés (SHA-256) dans le stockage. | `tests/security/login-attempts.test.js`, `tests/security/hardening.test.js` |
+| Journal d'audit | Connexions, échecs, blocages, accès refusés, vols de session détectés… sans aucun secret. Un journal en panne ne bloque jamais l'authentification. | `tests/security/audit-and-accounts.test.js` |
+| Hash modernisés | Les anciens hash sont recalculés à la connexion si votre repository le permet. | `tests/security/audit-and-accounts.test.js` |
+| Pas de journal imposé | La bibliothèque n'utilise jamais `console` : les événements passent par votre fonction `audit`. Seuls des problèmes de configuration ou de données (journal d'audit en panne, hash illisible, modernisation de hash échouée) sont signalés par des avertissements Node.js (`process.emitWarning`), qui ne contiennent aucun secret. | `tests/unit/architecture.test.js` |
 
 ## Ce que vous devez faire vous-même
 
@@ -54,93 +58,31 @@ devant Node.js, comme Nginx). HSTS oblige le navigateur à toujours utiliser HTT
 
 ### Limitation des tentatives de connexion
 
-Le **rate limiting** consiste à limiter le nombre de requêtes qu'un client peut faire sur une
-période. La bibliothèque ne le fait pas, car cela dépend de votre infrastructure.
+Sans limite, un attaquant peut essayer des milliers de mots de passe (attaque par **force
+brute**). Comme Argon2id est volontairement coûteux, il peut aussi saturer le processeur.
 
-**C'est pourtant indispensable.** Sans limite :
+**La bibliothèque limite déjà les tentatives, sans aucune configuration** :
 
-- un attaquant peut essayer des milliers de mots de passe (attaque par **force brute**) ;
-- comme Argon2id est volontairement coûteux, il peut aussi saturer le processeur du serveur.
+| Limite | Ce qui est compté | Par défaut |
+| --- | --- | --- |
+| Par compte | échecs sur un même identifiant (stocké sous forme de hash) | 5 échecs / 15 min |
+| Par client | tentatives depuis une même adresse IP (IPv6 regroupée par /64) | 20 tentatives / 15 min |
 
-Nous recommandons deux limiteurs (politique inspirée de l'OWASP) :
+Au-delà, `login()` répond **429** avec l'en-tête `Retry-After`, même si le mot de passe est
+correct. Il vous reste trois points à vérifier :
 
-| Limiteur | Ce qui est compté | Seuil indicatif | Rôle |
-| --- | --- | --- | --- |
-| Par IP | adresse IP (IPv6 regroupée par /56) | 20 tentatives / 15 min | freine une machine qui teste beaucoup de comptes |
-| Par identifiant | hash SHA-256 de l'identifiant normalisé | 5 échecs / 15 min | freine une attaque sur un compte depuis de nombreuses IP |
+1. **Plusieurs instances** : par défaut, les compteurs sont en mémoire, donc propres à chaque
+   processus. Avec 4 instances, la limite réelle est multipliée par 4. Branchez un stockage
+   partagé (Redis, PostgreSQL…) : voir
+   [Plusieurs serveurs](limitation-des-tentatives.md#plusieurs-serveurs--partager-les-compteurs).
+2. **`trust proxy`** : derrière un load balancer, indiquez le nombre exact de proxys
+   (`app.set("trust proxy", 1)`). Sinon, tout le monde partage l'IP du proxy. La valeur `true`
+   est trop permissive : un client pourrait falsifier son IP avec `X-Forwarded-For`.
+3. **Le revers du blocage par compte** : un attaquant qui connaît un identifiant peut bloquer
+   temporairement la connexion de cette personne. C'est un compromis assumé ; ajustez le seuil
+   et la fenêtre si besoin.
 
-L'exemple ci-dessous utilise [`express-rate-limit`](https://www.npmjs.com/package/express-rate-limit).
-Les compteurs sont stockés dans **Redis** (une base clé-valeur en mémoire). Ainsi, toutes les
-instances de votre application partagent les mêmes compteurs. Une version testée de ce code
-se trouve dans [examples/basic-express/src/rate-limit.js](../examples/basic-express/src/rate-limit.js).
-
-```bash
-npm install express-rate-limit rate-limit-redis redis
-```
-
-```javascript
-import { createHash } from "node:crypto";
-import { ipKeyGenerator, rateLimit } from "express-rate-limit";
-import { RedisStore } from "rate-limit-redis";
-import { createClient } from "redis";
-
-const redis = createClient({ url: process.env.REDIS_URL });
-await redis.connect();
-
-// Un store distinct par limiteur (express-rate-limit l'exige), partagé par toutes les instances.
-const redisStore = (prefix) =>
-  new RedisStore({ sendCommand: (...args) => redis.sendCommand(args), prefix: `rl:${prefix}` });
-
-const tooManyAttempts = (req, res, next, options) =>
-  res.status(options.statusCode).json({
-    error: { code: "TOO_MANY_REQUESTS", message: "Trop de tentatives de connexion. Réessayez plus tard." }
-  });
-
-const loginLimiterByIp = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  limit: 20,
-  standardHeaders: "draft-8",
-  legacyHeaders: false,
-  keyGenerator: (req) => ipKeyGenerator(req.ip),
-  handler: tooManyAttempts,
-  store: redisStore("login-ip:")
-});
-
-const loginLimiterByIdentifier = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  limit: 5,
-  skipSuccessfulRequests: true, // seuls les échecs comptent
-  standardHeaders: "draft-8",
-  legacyHeaders: false,
-  // L'identifiant est haché : aucune adresse e-mail n'est stockée dans Redis.
-  keyGenerator: (req) =>
-    createHash("sha256")
-      .update(String(req.body?.identifier ?? "").trim().toLowerCase())
-      .digest("base64url"),
-  handler: tooManyAttempts,
-  store: redisStore("login-id:")
-});
-
-app.set("trust proxy", 1); // nombre exact de proxys devant l'application
-app.use(express.json({ limit: "10kb" }));
-app.post("/auth/login", loginLimiterByIp, loginLimiterByIdentifier, loginHandler);
-```
-
-Ici, `loginHandler` est votre gestionnaire de connexion, par exemple `expressAuth.login()`.
-
-Points d'attention :
-
-- **`trust proxy`** : derrière un load balancer ou un reverse proxy, indiquez le nombre
-  exact de proxys. Sinon, `req.ip` vaut l'IP du proxy, et tout le monde partage le même
-  compteur. À l'inverse, la valeur `true` est trop permissive : un client peut alors
-  falsifier son IP avec l'en-tête `X-Forwarded-For`.
-- **Sans Redis** : chaque instance garde ses propres compteurs en mémoire. Avec 4 instances,
-  la limite réelle est donc multipliée par 4.
-- **Nom du champ** : le limiteur par identifiant lit `req.body.identifier`. Si vous utilisez
-  `expressAuth.login({ identifierField: "email" })`, lisez `req.body.email` à la place.
-- **Blocage d'une victime** : le limiteur par identifiant permet à un attaquant de bloquer
-  temporairement la connexion d'une personne dont il connaît l'identifiant. C'est un
-  compromis assumé. Ajustez le seuil et la fenêtre, ou remplacez le blocage par un CAPTCHA.
+Tous les détails : [Limiter les tentatives de connexion](limitation-des-tentatives.md).
 
 ### Révocation des JWT
 
@@ -171,7 +113,7 @@ Ce que nous recommandons :
 - Activez les [refresh tokens](refresh-tokens.md) : le token d'accès peut rester court
   (15 minutes) sans que l'utilisateur doive se reconnecter, et la déconnexion devient réelle.
 - Une liste de révocation par `jti` (l'identifiant unique de chaque token d'accès) n'est
-  **pas disponible** en 0.1.0. C'est un
+  **pas disponible** en 1.0. C'est un
   [point d'extension futur](architecture.md#points-dextension-futurs).
 
 ### Rotation du secret
@@ -181,7 +123,7 @@ valides. La **rotation** consiste à le remplacer par un nouveau.
 
 - Générez le secret avec `npx express-authkit secret`. Gardez-le dans une variable
   d'environnement (`AUTH_SECRET`), jamais dans le code.
-- La version 0.1.0 accepte **un seul** secret à la fois.
+- La version 1.0 accepte **un seul** secret à la fois.
 - Changer `AUTH_SECRET` invalide immédiatement **tous** les tokens. Tous les utilisateurs
   doivent se reconnecter. Planifiez la rotation en conséquence.
 - Une rotation sans coupure (plusieurs clés en parallèle, identifiées par `kid`) est un
@@ -209,16 +151,17 @@ valides. La **rotation** consiste à le remplacer par un nouveau.
 
 ### Stockage du token côté client
 
-- L'adaptateur 0.1.0 lit le token **uniquement** dans l'en-tête `Authorization`.
+- L'adaptateur 1.0 lit le token **uniquement** dans l'en-tête `Authorization`.
 - Côté client, gardez le token **en mémoire** quand c'est possible.
 - Évitez `localStorage` : n'importe quel script injecté dans la page peut le lire (attaque
   **XSS**, pour *cross-site scripting*).
-- Les cookies `HttpOnly` (illisibles par JavaScript) ne sont pas gérés en 0.1.0.
+- Les cookies `HttpOnly` (illisibles par JavaScript) ne sont pas gérés en 1.0.
 
 ## Limites connues
 
-- **Pas de limitation intégrée des tentatives.** C'est à votre application de la mettre en
-  place (voir [plus haut](#limitation-des-tentatives-de-connexion)).
+- **Compteurs en mémoire par défaut.** Ils sont propres à chaque processus et perdus au
+  redémarrage. En production multi-instances, utilisez un stockage partagé
+  (voir [plus haut](#limitation-des-tentatives-de-connexion)).
 - **Égalisation du temps de réponse partielle.** Le coût d'Argon2id est le même pour un
   compte inexistant, un mauvais mot de passe et un compte désactivé. Mais les écarts propres
   à votre repository ne sont pas masqués (par exemple une requête SQL plus lente quand
@@ -235,8 +178,10 @@ valides. La **rotation** consiste à le remplacer par un nouveau.
 - **Une lecture en base par requête.** `verifyAccessToken()` appelle `findById()` à chaque
   requête authentifiée. Gardez un index sur la clé primaire (c'est le cas par défaut) et
   dimensionnez votre base en conséquence.
-- **Pas d'audit externe.** La version 0.1.0 n'a pas été auditée par un expert indépendant.
-  Les garanties de cette page sont seulement celles couvertes par les tests automatisés.
+- **Pas d'audit externe.** La version 1.0 a fait l'objet d'une revue de sécurité interne
+  (limitation des tentatives sous concurrence, rotation des refresh tokens, adaptateur Express,
+  providers), mais pas d'un audit par un expert indépendant. Les garanties de cette page sont
+  seulement celles couvertes par les tests automatisés.
 
 ## Pour aller plus loin
 

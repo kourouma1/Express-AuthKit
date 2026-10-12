@@ -111,6 +111,27 @@ export const DEVELOPER_MESSAGES = Object.freeze({
     "avec au moins une règle. anyRole et allPermissions sont des listes de textes non vides, check est une fonction.",
   authorizationCheckNotBoolean:
     "La fonction « check » de authorize() doit renvoyer true ou false (éventuellement via une promesse).",
+  attemptStoreRequired:
+    "L’option « loginAttempts.store » doit implémenter hit() et reset() " +
+    "(ou retirez-la pour utiliser le stockage en mémoire).",
+  attemptStoreResultInvalid:
+    "AttemptStore.hit() doit renvoyer { count, resetAt } : count est un entier positif, resetAt la fin " +
+    "de la fenêtre en secondes (pas en millisecondes) depuis l’époque Unix.",
+  passwordHashUnreadable:
+    "Un hash de mot de passe enregistré est illisible par le PasswordProvider (format inattendu ou base " +
+    "corrompue). La connexion a été refusée comme un mauvais mot de passe. Pour migrer d’un autre algorithme, " +
+    "voir docs/providers-personnalises.md.",
+  passwordRehashFailed:
+    "La modernisation d’un hash de mot de passe a échoué (UserRepository.updatePasswordHash() ou " +
+    "PasswordProvider.hash()). La connexion a réussi ; le hash sera recalculé à la prochaine connexion.",
+  pwnedResponseInvalid: "La réponse du service Pwned Passwords est illisible (portail captif, proxy ?).",
+  secretWhitespace:
+    "L’option « jwt.secret » commence ou se termine par un espace ou un retour à la ligne. " +
+    "Retirez-le (fichier .env enregistré avec des fins de ligne Windows ?) : toutes les instances doivent avoir exactement le même secret.",
+  auditHookInvalid: "L’option « audit » doit être une fonction qui reçoit chaque événement.",
+  auditHookFailed:
+    "Le gestionnaire d’audit (option « audit ») a levé une erreur. L’authentification n’est pas bloquée, " +
+    "mais l’événement n’a peut-être pas été enregistré.",
   issuedTokenInvalid:
     "TokenProvider.issue() doit renvoyer { token, tokenId, issuedAt, expiresAt } : " +
     "token et tokenId sont des textes, issuedAt et expiresAt des nombres de secondes."
@@ -236,4 +257,21 @@ export function repositoryRecordAuthorities(field, maxItems, maxLength) {
     `Le champ « ${field} » renvoyé par le repository doit être une liste de textes non vides ` +
     `(au plus ${maxItems} éléments de ${maxLength} caractères), ou être absent.`
   );
+}
+
+/**
+ * @param {number} seconds
+ * @returns {string}
+ */
+export function tooManyAttempts(seconds) {
+  const minutes = Math.max(1, Math.ceil(seconds / 60));
+  return `Trop de tentatives de connexion. Réessayez dans ${minutes} minute${minutes > 1 ? "s" : ""}.`;
+}
+
+/**
+ * @param {number} status
+ * @returns {string}
+ */
+export function pwnedHttpError(status) {
+  return `Réponse HTTP ${status} du service Pwned Passwords.`;
 }

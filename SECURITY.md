@@ -2,9 +2,10 @@
 
 ## Versions prises en charge
 
-| Version | Correctifs de sécurité |
-| ------- | ---------------------- |
-| 0.1.x   | Oui                    |
+| Version            | Correctifs de sécurité |
+| ------------------ | ---------------------- |
+| 1.x                | Oui                    |
+| 0.x (préversions)  | Non : passez à 1.x     |
 
 ## Signaler une vulnérabilité
 
@@ -25,6 +26,6 @@ qui a fait le signalement.
 
 Express AuthKit s'appuie sur `jose` (JWT) et `argon2` (Argon2id) et
 n'implémente aucun algorithme cryptographique. Les limites de sécurité
-connues (révocation des JWT, rate limiting à la charge de l'application,
+connues (révocation des JWT, compteurs de tentatives en mémoire par défaut,
 heuristique de détection des secrets faibles…) sont décrites dans
 [docs/securite.md](docs/securite.md).

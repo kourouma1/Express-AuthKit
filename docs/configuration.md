@@ -27,16 +27,24 @@ const auth = createAuthKit({
   refreshTokens: {                  // facultatif : rester connecté (voir refresh-tokens.md)
     store: refreshTokenStore,
     expiresInSeconds: 1209600       // facultatif, 14 jours par défaut
-  }
+  },
+  loginAttempts: {                  // facultatif : déjà actif par défaut (voir limitation-des-tentatives.md)
+    maxFailuresPerIdentifier: 5,    // échecs avant blocage du compte
+    maxAttemptsPerClient: 20,       // tentatives par adresse IP
+    windowSeconds: 900              // fenêtre de comptage, ouverte à la 1re tentative (15 min)
+  },
+  audit: (event) => logger.info(event) // facultatif : journal d'audit (voir audit.md)
 });
 ```
 
-Vous passez un seul objet à `createAuthKit()`. Il contient cinq clés possibles :
+Vous passez un seul objet à `createAuthKit()`. Il contient sept clés possibles :
 
 - `users` : l'objet qui lit vos utilisateurs en base (voir [le repository utilisateur](repository-utilisateur.md)). Obligatoire.
 - `jwt` : les réglages des tokens de connexion. Obligatoire.
 - `password` : les réglages du hachage des mots de passe. Facultatif.
 - `refreshTokens` : active les [refresh tokens](refresh-tokens.md), pour garder l'utilisateur connecté. Facultatif.
+- `loginAttempts` : les réglages de la [limitation des tentatives](limitation-des-tentatives.md), active par défaut. `false` la désactive. Facultatif.
+- `audit` : une fonction qui reçoit chaque [événement de sécurité](audit.md). Facultatif.
 - `providers` : pour remplacer les briques par défaut ([providers personnalisés](providers-personnalises.md)). Rare.
 
 La configuration est **vérifiée dès le démarrage**. Une option manquante, inconnue ou
@@ -142,6 +150,17 @@ Pour choisir vos valeurs :
 Vous pouvez changer ces valeurs plus tard sans risque. Les paramètres sont enregistrés dans
 chaque hash. Les anciens hash restent donc vérifiables avec leurs paramètres d'origine.
 
+## Limitation des tentatives
+
+| Option | Défaut | Minimum | Maximum | Rôle |
+| --- | --- | --- | --- | --- |
+| `maxFailuresPerIdentifier` | `5` | `1` | `100` | Échecs sur un même compte avant blocage. |
+| `maxAttemptsPerClient` | `20` | `1` | `100000` | Tentatives depuis une même adresse IP. |
+| `windowSeconds` | `900` (15 min) | `60` | `86400` (24 h) | Durée de la fenêtre de comptage, ouverte à la première tentative. Un compte bloqué l'est jusqu'à la fin de la fenêtre. |
+| `store` | en mémoire | — | — | Stockage partagé des compteurs (Redis, PostgreSQL…), indispensable avec plusieurs instances. |
+
+Explications et exemples de stockage : [Limiter les tentatives de connexion](limitation-des-tentatives.md).
+
 ## Variables d'environnement recommandées
 
 ```bash
@@ -171,6 +190,8 @@ const auth = createAuthKit({
 | `algorithm: "none"` | « L’option « jwt.algorithm » doit valoir l’une de ces valeurs : HS256, HS384, HS512. » |
 | `expiresInSeconds: 604800` | « L’option « jwt.expiresInSeconds » doit être un nombre entier compris entre 30 et 86400. » |
 | `password: { memoryCost: 4096 }` | « L’option « password.memoryCost » doit être un nombre entier compris entre 19456 et 4194304. » |
+| `secret: "…\r"` (fichier `.env` Windows) | « L’option « jwt.secret » commence ou se termine par un espace ou un retour à la ligne. … » |
+| `loginAttempts: { windowSeconds: 10 }` | « L’option « loginAttempts.windowSeconds » doit être un nombre entier compris entre 60 et 86400. » |
 | `jwt: { expiresIn: "1h", … }` | « Option inconnue dans « jwt » : expiresIn. Options acceptées : … » |
 
 ## Pour aller plus loin

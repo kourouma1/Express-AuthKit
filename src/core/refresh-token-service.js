@@ -1,5 +1,5 @@
 import { normalizeConsumedRefreshToken } from "./contracts/refresh-token-store.js";
-import { AUTH_FAILURE_REASONS, InvalidInputError, InvalidRefreshTokenError, callDependency } from "./errors.js";
+import { AUTH_FAILURE_REASONS, InvalidInputError, InvalidRefreshTokenError, attachUserId, callDependency } from "./errors.js";
 import { MAX_REFRESH_TOKEN_LENGTH } from "./input-limits.js";
 import { PUBLIC_MESSAGES } from "./messages.js";
 
@@ -48,22 +48,46 @@ export function createRefreshTokenService({ store, expiresInSeconds }) {
    * probable : toute sa famille est alors révoquée.
    *
    * @param {unknown} token
-   * @returns {Promise<ConsumedRefreshToken>}
+   * @returns {Promise<ConsumedRefreshToken & { tokenHash: string }>}
    * @throws {InvalidInputError | InvalidRefreshTokenError}
    */
   async function consume(token) {
-    const consumed = await consumeRecord(assertRefreshTokenShape(token));
+    const tokenHash = await hashToken(assertRefreshTokenShape(token));
+    const consumed = await consumeRecord(tokenHash);
     if (consumed === null) {
       throw new InvalidRefreshTokenError(AUTH_FAILURE_REASONS.REFRESH_TOKEN_UNKNOWN);
     }
     if (consumed.alreadyUsed) {
       await revokeFamily(consumed.familyId);
-      throw new InvalidRefreshTokenError(AUTH_FAILURE_REASONS.REFRESH_TOKEN_REUSED);
+      throw attachUserId(new InvalidRefreshTokenError(AUTH_FAILURE_REASONS.REFRESH_TOKEN_REUSED), consumed.userId);
     }
     if (consumed.expiresAt <= nowInSeconds()) {
-      throw new InvalidRefreshTokenError(AUTH_FAILURE_REASONS.REFRESH_TOKEN_EXPIRED);
+      throw attachUserId(new InvalidRefreshTokenError(AUTH_FAILURE_REASONS.REFRESH_TOKEN_EXPIRED), consumed.userId);
     }
-    return consumed;
+    return { ...consumed, tokenHash };
+  }
+
+  /**
+   * Après l’enregistrement du nouveau jeton d’une rotation, vérifie que l’ancien
+   * jeton existe toujours. Une révocation (déconnexion, `revokeUser`, vol
+   * détecté) survenue pendant la rotation l’a supprimé : le nouveau jeton,
+   * enregistré trop tard pour être révoqué avec la famille, est alors révoqué ici.
+   *
+   * Sans risque de course : soit la révocation a eu lieu avant cette
+   * vérification (l’ancien jeton a disparu), soit après, et elle a alors aussi
+   * supprimé le nouveau jeton, déjà enregistré.
+   *
+   * @param {{ tokenHash: string, familyId: string, userId: string }} previous
+   * @returns {Promise<void>}
+   * @throws {InvalidRefreshTokenError}
+   */
+  async function assertRotationNotRevoked(previous) {
+    // L’ancien jeton est déjà marqué comme utilisé : le consommer à nouveau ne
+    // change rien, et renvoie null seulement s’il a été révoqué.
+    if ((await consumeRecord(previous.tokenHash)) === null) {
+      await revokeFamily(previous.familyId);
+      throw attachUserId(new InvalidRefreshTokenError(AUTH_FAILURE_REASONS.REFRESH_TOKEN_UNKNOWN), previous.userId);
+    }
   }
 
   /**
@@ -72,13 +96,14 @@ export function createRefreshTokenService({ store, expiresInSeconds }) {
    * réussir.
    *
    * @param {unknown} token
-   * @returns {Promise<void>}
+   * @returns {Promise<string | undefined>} L'utilisateur de la session révoquée, s'il est connu.
    */
   async function revokeSessionOf(token) {
-    const consumed = await consumeRecord(assertRefreshTokenShape(token));
+    const consumed = await consumeRecord(await hashToken(assertRefreshTokenShape(token)));
     if (consumed !== null) {
       await revokeFamily(consumed.familyId);
     }
+    return consumed?.userId;
   }
 
   /**
@@ -98,17 +123,16 @@ export function createRefreshTokenService({ store, expiresInSeconds }) {
   }
 
   /**
-   * @param {string} token
+   * @param {string} tokenHash
    * @returns {Promise<ConsumedRefreshToken | null>}
    */
-  async function consumeRecord(token) {
-    const tokenHash = await hashToken(token);
+  async function consumeRecord(tokenHash) {
     return normalizeConsumedRefreshToken(
       await callDependency("RefreshTokenStore.consume", () => store.consume(tokenHash))
     );
   }
 
-  return Object.freeze({ issue, consume, revokeSessionOf, revokeFamily, revokeUser });
+  return Object.freeze({ issue, consume, assertRotationNotRevoked, revokeSessionOf, revokeFamily, revokeUser });
 }
 
 /**

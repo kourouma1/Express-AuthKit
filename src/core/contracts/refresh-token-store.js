@@ -35,11 +35,14 @@ import { assertImplements } from "./assert-contract.js";
  *   est inconnu. Doit être **atomique** : si deux requêtes consomment le même
  *   jeton en même temps, une seule doit obtenir `alreadyUsed: false`.
  *   Les jetons utilisés doivent être conservés jusqu’à leur expiration, pour
- *   détecter une réutilisation.
+ *   détecter une réutilisation. Un jeton en cours de révocation ne doit jamais
+ *   être renvoyé comme présent (avec SQL : `SELECT … FOR SHARE`).
  * @property {(familyId: string) => Promise<void>} revokeFamily
- *   Supprime (ou invalide) tous les jetons d’une famille.
+ *   Supprime tous les jetons d’une famille, utilisés ou non : `consume()` doit
+ *   ensuite renvoyer `null` pour chacun d’eux.
  * @property {(userId: string) => Promise<void>} revokeUser
- *   Supprime (ou invalide) tous les jetons d’un utilisateur.
+ *   Supprime tous les jetons d’un utilisateur, utilisés ou non : `consume()` doit
+ *   ensuite renvoyer `null` pour chacun d’eux.
  */
 
 /** @type {readonly string[]} */

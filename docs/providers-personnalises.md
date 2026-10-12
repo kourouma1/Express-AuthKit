@@ -168,8 +168,10 @@ en émettre.
 ## Exemple : migration depuis bcrypt
 
 Vous avez une base avec d'anciens mots de passe hachés en **bcrypt** ? Ce provider les
-accepte. Quand un utilisateur se connecte avec succès, son hash bcrypt est remplacé par un
-hash Argon2id. Les comptes migrent donc au fil des connexions.
+accepte. Quand un utilisateur se connecte avec succès, la bibliothèque remplace son hash
+bcrypt par un hash Argon2id
+([modernisation automatique](mots-de-passe.md#moderniser-automatiquement-les-anciens-hash)).
+Les comptes migrent donc au fil des connexions.
 
 Il utilise `bcryptjs` (`npm install bcryptjs`).
 
@@ -179,56 +181,52 @@ import bcrypt from "bcryptjs";
 import { createArgon2PasswordProvider } from "@express-authkit/core";
 
 /**
- * PasswordProvider qui accepte les anciens hash bcrypt et les remplace par
- * un hash Argon2id après une vérification réussie.
+ * PasswordProvider qui accepte les anciens hash bcrypt. `needsRehash()` les signale :
+ * après une connexion réussie, la bibliothèque les remplace par un hash Argon2id.
  *
- * @param {(oldHash: string, newHash: string) => Promise<void>} replaceHash
- *   Persiste le nouveau hash, par exemple :
- *   UPDATE users SET password_hash = $2 WHERE password_hash = $1
  * @returns {import("@express-authkit/core").PasswordProvider}
  */
-export function createMigratingPasswordProvider(replaceHash) {
+export function createMigratingPasswordProvider() {
   const argon2 = createArgon2PasswordProvider();
+  const isBcrypt = (hash) => /^\$2[aby]\$/.test(hash);
 
   return {
     hash: (password) => argon2.hash(password),
-
-    async verify(password, hash) {
-      if (!hash.startsWith("$2")) {
-        return argon2.verify(password, hash);
-      }
-      const matches = await bcrypt.compare(password, hash);
-      if (matches) {
-        await replaceHash(hash, await argon2.hash(password));
-      }
-      return matches;
-    }
+    verify: (password, hash) => (isBcrypt(hash) ? bcrypt.compare(password, hash) : argon2.verify(password, hash)),
+    needsRehash: (hash) => isBcrypt(hash) || argon2.needsRehash(hash)
   };
 }
 ```
 
-Branchez-le en lui donnant une fonction qui enregistre le nouveau hash :
+Branchez-le, et ajoutez `updatePasswordHash()` à votre repository pour enregistrer le
+nouveau hash :
 
 ```javascript
 // server.js (avec pg)
-const auth = createAuthKit({
-  users: createPgUserRepository(pool),
-  jwt: { secret: process.env.AUTH_SECRET, issuer: "my-api", audience: "my-client" },
-  providers: {
-    password: createMigratingPasswordProvider(async (oldHash, newHash) => {
-      await pool.query("UPDATE users SET password_hash = $2 WHERE password_hash = $1", [oldHash, newHash]);
-    })
+const users = {
+  ...createPgUserRepository(pool),
+  async updatePasswordHash(id, passwordHash) {
+    await pool.query("UPDATE users SET password_hash = $1 WHERE id = $2", [passwordHash, id]);
   }
+};
+
+const auth = createAuthKit({
+  users,
+  jwt: { secret: process.env.AUTH_SECRET, issuer: "my-api", audience: "my-client" },
+  providers: { password: createMigratingPasswordProvider() }
 });
 ```
+
+Le nouveau hash n'est enregistré qu'après une connexion **complète** : bon mot de passe et
+compte actif.
 
 > **Attention** : bcrypt et Argon2id ne prennent pas le même temps de calcul. Pendant la
 > migration, un attaquant qui mesure le temps de réponse peut deviner quel type de hash
 > possède un compte. Gardez la période de migration courte. Ensuite, forcez la
 > réinitialisation du mot de passe des comptes qui n'ont pas migré.
 
-Ces deux exemples ont été exécutés avec la version 0.1.0 (connexion, vérification,
-ré-hachage, refus d'un token falsifié). Ils ne font pas partie de la suite de tests du dépôt.
+Ces exemples ont été exécutés (connexion, vérification, ré-hachage, refus d'un token
+falsifié). Ils ne font pas partie de la suite de tests du dépôt.
 
 ## Tester un provider personnalisé
 
@@ -277,5 +275,5 @@ const hash = await passwords.hash("new password from a reset flow");
 
 ### Autres idées
 
-D'autres évolutions (liste de révocation, clés multiples avec JWKS, ré-hachage progressif)
+D'autres évolutions (liste de révocation, clés multiples avec JWKS)
 sont décrites dans les [points d'extension futurs](architecture.md#points-dextension-futurs).

@@ -12,6 +12,9 @@ import { assertImplements } from "./assert-contract.js";
  * @property {(password: string, hash: string) => Promise<boolean>} verify
  *   Renvoie `true` si le mot de passe correspond. La comparaison doit être en
  *   temps constant et lever `InvalidPasswordHashError` si `hash` est illisible.
+ * @property {(hash: string) => boolean | Promise<boolean>} [needsRehash]
+ *   Facultatif. Renvoie `true` si le hash a été produit avec des paramètres dépassés
+ *   (coûts plus faibles, ancien algorithme) : il est alors recalculé à la connexion.
  */
 
 /** @type {readonly string[]} */

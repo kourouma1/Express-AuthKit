@@ -27,7 +27,7 @@ Toutes ces erreurs héritent de la classe `AuthKitError`.
 
 ## Liste des erreurs
 
-### Erreurs causées par le client (400, 401 et 403)
+### Erreurs causées par le client (400, 401, 403 et 429)
 
 | `code` | Statut | Quand ? | Message envoyé |
 | --- | --- | --- | --- |
@@ -38,10 +38,12 @@ Toutes ces erreurs héritent de la classe `AuthKitError`.
 | `TOKEN_EXPIRED` | 401 | Token expiré (signature valide) | « Jeton d’accès expiré. » |
 | `ACCESS_DENIED` | 403 | Connecté, mais sans le rôle ou la permission demandé par `authorize()` ([rôles et permissions](roles-et-permissions.md)) | « Accès refusé : vous n’avez pas les droits nécessaires. » |
 | `REFRESH_TOKEN_INVALID` | 401 | Refresh token inconnu, expiré, déjà utilisé ou révoqué ([refresh tokens](refresh-tokens.md)) | « Jeton de rafraîchissement invalide ou expiré. Reconnectez-vous. » |
+| `TOO_MANY_ATTEMPTS` | 429 | Trop d'échecs sur ce compte, ou trop de tentatives depuis cette adresse IP ([limitation des tentatives](limitation-des-tentatives.md)). En-tête `Retry-After` et propriété `error.retryAfterSeconds`. | « Trop de tentatives de connexion. Réessayez dans 15 minutes. » |
 
 - **400** : la requête est mal formée.
 - **401** : la personne n'est pas authentifiée.
 - **403** : la personne est authentifiée, mais n'a pas le droit d'accéder à la ressource.
+- **429** : trop de tentatives ; il faut attendre avant de réessayer.
 
 ### Erreurs côté serveur (à corriger dans votre code ou votre configuration)
 
@@ -49,14 +51,14 @@ Toutes ces erreurs héritent de la classe `AuthKitError`.
 | --- | --- | --- | --- |
 | `INVALID_CONFIGURATION` | Options absentes ou dangereuses | levée au démarrage | décrit l'option |
 | `CONTRACT_VIOLATION` | Repository ou provider non conforme | 500 via `next()` | décrit le contrat |
-| `INVALID_PASSWORD_HASH` | Hash stocké illisible (bcrypt, texte brut…) | 500 via `next()` | « Le hash de mot de passe enregistré n’est pas au format Argon2id… » |
+| `INVALID_PASSWORD_HASH` | Hash stocké illisible (bcrypt, texte brut…) lors d'un appel direct à `auth.password.verify()`. Pendant `auth.login()`, ce cas devient un `INVALID_CREDENTIALS` ordinaire (raison `INVALID_PASSWORD_HASH`, avertissement Node.js) pour ne pas révéler l'existence du compte. | 500 via `next()` | « Le hash de mot de passe enregistré n’est pas au format Argon2id… » |
 | `DEPENDENCY_FAILURE` | Votre repository ou un provider a planté (base de données indisponible, bug…) | 500 via `next()` | « L’appel à UserRepository.findById() a échoué… » |
 
 Tous les messages sont en français et expliquent comment corriger le problème.
 
 Noms des classes, dans l'ordre des deux tableaux : `InvalidInputError`,
 `InvalidCredentialsError`, `TokenMissingError`, `InvalidTokenError`, `TokenExpiredError`,
-`ConfigurationError`, `ContractViolationError`, `InvalidPasswordHashError`,
+`AccessDeniedError`, `InvalidRefreshTokenError`, `TooManyAttemptsError`, `ConfigurationError`, `ContractViolationError`, `InvalidPasswordHashError`,
 `DependencyFailureError`.
 
 ### Quand votre base de données tombe : `DEPENDENCY_FAILURE`
@@ -93,9 +95,9 @@ Cette version ne contient ni la pile d'appels, ni `cause`, ni `reason`.
 
 ## Avec Express
 
-### Cas 1 : `authenticate()` et `login()` (rien à faire)
+### Cas 1 : `authenticate()`, `authorize()`, `login()`, `refresh()` et `logout()` (rien à faire)
 
-Ces deux middlewares répondent eux-mêmes aux erreurs client (400 et 401). Ils transmettent
+Ces middlewares répondent eux-mêmes aux erreurs client (400, 401, 403 et 429). Ils transmettent
 les autres erreurs à `next(error)`. Vous n'avez rien à ajouter.
 
 ### Cas 2 : vos propres routes, avec `expressAuth.errorHandler()`
@@ -107,7 +109,8 @@ personnalisée, inscription…) ? Ajoutez ce gestionnaire **après** vos routes 
 app.use(expressAuth.errorHandler());
 ```
 
-Il transforme `INVALID_INPUT` (400), `INVALID_CREDENTIALS` et `TOKEN_*` (401) en JSON.
+Il transforme `INVALID_INPUT` (400), `INVALID_CREDENTIALS`, `TOKEN_*` et `REFRESH_TOKEN_INVALID` (401), `ACCESS_DENIED`
+(403) et `TOO_MANY_ATTEMPTS` (429, avec `Retry-After`) en JSON.
 Il gère aussi les erreurs du parseur `express.json()` : un JSON mal formé donne un **400**
 (« Le corps de la requête n’est pas un JSON valide. ») et un corps trop gros un **413**,
 au lieu de la page d'erreur HTML d'Express.
@@ -122,8 +125,8 @@ Exemple pour un échec de connexion :
 { "error": { "code": "INVALID_CREDENTIALS", "message": "Identifiants invalides." } }
 ```
 
-Il ajoute l'en-tête `Cache-Control: no-store` (pas de mise en cache) et, pour les 401,
-l'en-tête `WWW-Authenticate`. Il passe toutes les autres erreurs au gestionnaire suivant.
+Il ajoute l'en-tête `Cache-Control: no-store` (pas de mise en cache), l'en-tête
+`WWW-Authenticate` pour les erreurs de token, et `Retry-After` pour les 429. Il passe toutes les autres erreurs au gestionnaire suivant.
 
 ### Toujours : un gestionnaire final qui ne dévoile rien
 
@@ -149,8 +152,7 @@ app.use((error, req, res, _next) => {
 ## Journaliser les échecs de connexion
 
 Quand une connexion échoue, le client reçoit toujours le même message. Mais vous, côté
-serveur, pouvez connaître la vraie raison grâce à **`error.reason`**. Elle existe sur les
-erreurs `INVALID_CREDENTIALS` et `TOKEN_INVALID` :
+serveur, pouvez connaître la vraie raison :
 
 | `reason` | Signification |
 | --- | --- |
@@ -158,25 +160,30 @@ erreurs `INVALID_CREDENTIALS` et `TOKEN_INVALID` :
 | `INVALID_PASSWORD` | Mot de passe incorrect. |
 | `ACCOUNT_DISABLED` | `isActive !== true`. |
 
-```javascript
-import { AUTH_ERROR_CODES, isAuthKitError } from "@express-authkit/core";
+Le plus simple est le [journal d'audit](audit.md) : chaque échec y arrive avec sa raison, sans
+rien changer à vos routes.
 
-app.post("/auth/login", express.json(), loginRateLimiters, async (req, res, next) => {
-  try {
-    const { accessToken, tokenType, expiresIn } = await auth.login({
-      identifier: req.body?.identifier,
-      password: req.body?.password
-    });
-    res.set("Cache-Control", "no-store");
-    res.json({ accessToken, tokenType, expiresIn });
-  } catch (error) {
-    if (isAuthKitError(error) && error.code === AUTH_ERROR_CODES.INVALID_CREDENTIALS) {
-      // Ni mot de passe, ni identifiant en clair dans les journaux.
-      auditLog.warn({ event: "login.failed", reason: error.reason, ip: req.ip });
-    }
-    next(error);
-  }
+```javascript
+const auth = createAuthKit({
+  users: userRepository,
+  jwt: { secret: process.env.AUTH_SECRET, issuer: "my-api", audience: "my-client" },
+  audit: (event) => logger.info({ audit: event }, event.type)
 });
+// {"type":"login.failed","reason":"INVALID_PASSWORD","userId":"42","client":"203.0.113.7",…}
+```
+
+Si vous appelez `auth.login()` vous-même, la raison est aussi dans **`error.reason`** (erreurs
+`INVALID_CREDENTIALS` et `TOKEN_INVALID`) :
+
+```javascript
+try {
+  await auth.login({ identifier, password }, { clientKey: clientKeyOf(req) });
+} catch (error) {
+  if (isAuthKitError(error) && error.code === AUTH_ERROR_CODES.INVALID_CREDENTIALS) {
+    logger.warn({ reason: error.reason }); // jamais le mot de passe
+  }
+  throw error;
+}
 ```
 
 > **Ne renvoyez jamais `error.reason` au client.** Elle dirait à un attaquant si un compte
@@ -210,7 +217,10 @@ const STATUS_BY_CODE = {
   [AUTH_ERROR_CODES.INVALID_CREDENTIALS]: 401,
   [AUTH_ERROR_CODES.TOKEN_MISSING]: 401,
   [AUTH_ERROR_CODES.TOKEN_INVALID]: 401,
-  [AUTH_ERROR_CODES.TOKEN_EXPIRED]: 401
+  [AUTH_ERROR_CODES.TOKEN_EXPIRED]: 401,
+  [AUTH_ERROR_CODES.REFRESH_TOKEN_INVALID]: 401,
+  [AUTH_ERROR_CODES.ACCESS_DENIED]: 403,
+  [AUTH_ERROR_CODES.TOO_MANY_ATTEMPTS]: 429
 };
 
 app.use((error, req, res, next) => {
@@ -223,5 +233,6 @@ app.use((error, req, res, next) => {
 });
 ```
 
-Ce gestionnaire n'ajoute pas les en-têtes `Cache-Control: no-store` et `WWW-Authenticate`.
+Ce gestionnaire n'ajoute pas les en-têtes `Cache-Control: no-store`, `WWW-Authenticate` et
+`Retry-After` (valeur : `error.retryAfterSeconds`).
 Ajoutez-les vous-même si vous en avez besoin.

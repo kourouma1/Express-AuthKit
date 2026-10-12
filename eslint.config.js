@@ -3,7 +3,7 @@ import globals from "globals";
 
 export default [
   {
-    ignores: ["node_modules/", "coverage/", "examples/**/node_modules/", "**/.venv/**", "*.tgz"]
+    ignores: ["node_modules/", "coverage/", "examples/**/node_modules/", "**/.venv/**", "*.tgz", "types/", "video/"]
   },
   js.configs.recommended,
   {

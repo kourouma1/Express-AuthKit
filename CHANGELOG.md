@@ -1,0 +1,37 @@
+# Historique des versions
+
+Toutes les évolutions notables d'Express AuthKit sont consignées ici.
+
+Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
+et le projet suit le [Versionnage sémantique](https://semver.org/lang/fr/).
+
+## Politique de versions
+
+- **MAJEURE** (`1.0.0` → `2.0.0`) : changement incompatible de l'API publique
+  (exports, signatures, codes d'erreur, format de `req.auth`).
+- **MINEURE** (`0.1.0` → `0.2.0`) : nouvelle fonctionnalité rétrocompatible.
+- **CORRECTIF** (`0.1.0` → `0.1.1`) : correction de bug ou de sécurité rétrocompatible.
+
+Tant que le projet est en `0.x`, une version mineure peut contenir des
+changements incompatibles ; ils seront toujours signalés dans ce fichier
+sous la rubrique **Incompatible**. L'API publique se limite aux exports de
+`express-authkit` et `express-authkit/express`.
+
+## [Non publié]
+
+## [0.1.0] — candidate
+
+### Ajouté
+
+- `createAuthKit()` : moteur d'authentification configurable par injection de dépendances.
+- Hachage et vérification des mots de passe avec Argon2id (`auth.password.hash()`, `auth.password.verify()`).
+- Émission de JWT d'accès signés HMAC (HS256 par défaut) avec `jose`, en-tête `typ: at+jwt`.
+- Vérification stricte des JWT : signature, algorithme autorisé, `exp`, `iat`, `iss`, `aud`, `sub`, `jti`.
+- `auth.login()` : authentification identifiant / mot de passe avec message d'erreur générique
+  et atténuation des écarts de temps de réponse pour les comptes inexistants.
+- `auth.verifyAccessToken()` : contrôle de l'existence et du statut actif de l'utilisateur à chaque requête.
+- Adaptateur Express `createExpressAuth()` : middleware `authenticate()` et `errorHandler()`.
+- Contrats `UserRepository`, `PasswordProvider`, `TokenProvider` documentés en JSDoc et vérifiés au démarrage.
+- Erreurs structurées avec codes stables (`AUTH_ERROR_CODES`).
+- Validation de la configuration : secret absent, court ou manifestement faible refusé,
+  paramètres Argon2id sous le plancher OWASP refusés, options inconnues refusées.

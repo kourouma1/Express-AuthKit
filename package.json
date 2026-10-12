@@ -1,5 +1,5 @@
 {
-  "name": "@kourouma/express-authkit",
+  "name": "@facto/express-authkit",
   "version": "0.1.0-rc.1",
   "description": "Moteur d'authentification sécurisé et extensible pour Express.js : Argon2id, JWT (jose), repository utilisateur injectable.",
   "keywords": [

@@ -1,6 +1,6 @@
 {
   "name": "express-authkit",
-  "version": "0.1.0",
+  "version": "0.1.0-rc.1",
   "description": "Moteur d'authentification sécurisé et extensible pour Express.js : Argon2id, JWT (jose), repository utilisateur injectable.",
   "keywords": [
     "express",
@@ -16,6 +16,14 @@
   ],
   "license": "MIT",
   "author": "Express AuthKit contributors",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kourouma1/Express-AuthKit.git"
+  },
+  "homepage": "https://github.com/kourouma1/Express-AuthKit#readme",
+  "bugs": {
+    "url": "https://github.com/kourouma1/Express-AuthKit/issues"
+  },
   "type": "module",
   "sideEffects": false,
   "exports": {
@@ -30,7 +38,7 @@
     "./package.json": "./package.json"
   },
   "bin": {
-    "express-authkit": "./bin/express-authkit.js"
+    "express-authkit": "bin/express-authkit.js"
   },
   "files": [
     "bin/",

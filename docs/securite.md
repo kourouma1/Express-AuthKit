@@ -1,50 +1,76 @@
-# Bonnes pratiques et limites de sécurité
+# Sécurité : bonnes pratiques et limites
 
-Express AuthKit applique des réglages sûrs par défaut, mais **la sécurité d'une API dépend
-aussi de son déploiement**. Ce document liste ce que la bibliothèque garantit, ce qui reste à
-votre charge et les limites connues.
+**En bref** : Express AuthKit applique des réglages sûrs par défaut, mais il ne peut pas tout
+faire à votre place. Cette page liste ce que la bibliothèque fait déjà, ce que vous devez faire
+vous-même et ses limites connues. Après lecture, vous saurez préparer votre API pour la
+production.
 
-## Ce que la bibliothèque applique
+## Avant la mise en production
 
-| Mesure | Détail | Testé dans |
+Cochez chaque point. Chacun est expliqué plus bas.
+
+- [ ] L'API est servie **uniquement en HTTPS**, avec HSTS activé ([détails](#https-obligatoire)).
+- [ ] La route de connexion **limite le nombre de tentatives** ([détails](#limitation-des-tentatives-de-connexion)).
+- [ ] Le secret JWT est généré avec `npx express-authkit secret` et n'est jamais commité ([détails](#rotation-du-secret)).
+- [ ] La durée de vie des tokens reste **courte** (15 minutes par défaut) ([détails](#révocation-des-jwt)).
+- [ ] Vous savez **couper l'accès** d'un utilisateur : désactiver son compte ([détails](#révocation-des-jwt)).
+- [ ] Les logs ne contiennent **ni mot de passe, ni token, ni en-tête `Authorization`** ([détails](#journalisation)).
+- [ ] Les en-têtes HTTP sont durcis : `helmet`, limite de taille JSON, CORS, `no-store` ([détails](#en-têtes-et-durcissement-http)).
+- [ ] Le client stocke le token de façon prudente ([détails](#stockage-du-token-côté-client)).
+- [ ] Vous avez lu les [limites connues](#limites-connues).
+
+## Ce que la bibliothèque fait pour vous
+
+| Protection | En pratique | Testé dans |
 | --- | --- | --- |
-| Argon2id | Paramètres ≥ plancher OWASP, sel aléatoire, comparaison en temps constant | `tests/unit/argon2-password-provider.test.js` |
-| Secret JWT | Obligatoire, ≥ 32 octets (HS256), valeurs d'exemple et répétitives refusées | `tests/unit/config.test.js` |
-| Algorithmes JWT | Liste fermée ; `alg: none` et autres algorithmes refusés | `tests/security/jwt-security.test.js` |
-| Claims JWT | `iss`, `aud`, `exp`, `iat`, `sub`, `jti` et `typ: at+jwt` vérifiés | `tests/security/jwt-security.test.js` |
-| Tokens falsifiés / expirés / mal formés | Refusés (401) | `tests/security/`, `tests/integration/express.test.js` |
-| Contenu des tokens | Uniquement des claims standard, aucune donnée personnelle | `tests/security/jwt-security.test.js` |
-| Énumération de comptes | Même erreur publique pour compte inconnu, mot de passe faux, compte désactivé | `tests/security/login-security.test.js` |
-| Écart temporel | Vérification Argon2id réelle sur un hash factice pour les comptes inexistants | `tests/security/login-security.test.js` |
-| Comptes désactivés / supprimés | Refusés à la connexion **et** à chaque requête authentifiée | `tests/security/login-security.test.js` |
-| Hash de mot de passe | Jamais renvoyé par `login()` ni placé dans `req.auth` | `tests/unit/authentication-service.test.js` |
-| Entrées non fiables | Types et longueurs vérifiés avant tout traitement coûteux | `tests/unit/authentication-service.test.js` |
-| Erreurs HTTP | Code + message public uniquement ; pas de pile, cause ni raison interne | `tests/integration/express.test.js` |
-| Journalisation | La bibliothèque n'écrit rien dans la console | `tests/unit/architecture.test.js` |
+| Hachage Argon2id (algorithme volontairement lent, pour rendre le cassage coûteux) | Paramètres au moins égaux au minimum OWASP, sel aléatoire, comparaison en temps constant. | `tests/unit/argon2-password-provider.test.js` |
+| Secret JWT exigé | Obligatoire, au moins 32 octets (HS256). Les valeurs d'exemple et répétitives sont refusées. | `tests/unit/config.test.js` |
+| Algorithmes JWT | Liste fermée. `alg: none` et tout autre algorithme sont refusés. | `tests/security/jwt-security.test.js` |
+| Contenu du JWT vérifié | `iss`, `aud`, `exp`, `iat`, `sub`, `jti` et `typ: at+jwt` sont contrôlés. | `tests/security/jwt-security.test.js` |
+| Tokens falsifiés, expirés ou mal formés | Refusés avec une réponse 401. | `tests/security/`, `tests/integration/express.test.js` |
+| Pas de données personnelles dans le token | Le JWT contient uniquement des champs standard. | `tests/security/jwt-security.test.js` |
+| Pas d'énumération de comptes | Même erreur pour un compte inconnu, un mauvais mot de passe ou un compte désactivé. Un attaquant ne peut donc pas savoir si un e-mail est inscrit. | `tests/security/login-security.test.js` |
+| Temps de réponse égalisé | Pour un compte inexistant, un vrai calcul Argon2id est fait sur un hash factice. La réponse prend donc à peu près le même temps. | `tests/security/login-security.test.js` |
+| Comptes désactivés ou supprimés | Refusés à la connexion **et** à chaque requête authentifiée. | `tests/security/login-security.test.js` |
+| Hash du mot de passe protégé | Jamais renvoyé par `login()`, jamais placé dans `req.auth`. | `tests/unit/authentication-service.test.js` |
+| Entrées vérifiées | Types et longueurs contrôlés avant tout calcul coûteux. | `tests/unit/authentication-service.test.js` |
+| Erreurs HTTP sobres | Seuls un code et un message public sont envoyés. Jamais la pile d'appels, la cause ni la raison interne. | `tests/integration/express.test.js` |
+| Aucun log | La bibliothèque n'écrit rien dans la console. | `tests/unit/architecture.test.js` |
 
-## Ce qui reste à votre charge
+## Ce que vous devez faire vous-même
 
 ### HTTPS obligatoire
 
-Un token `Bearer` intercepté donne accès au compte jusqu'à son expiration. Servez l'API
-uniquement en HTTPS et activez HSTS sur votre reverse proxy.
+Après la connexion, le client reçoit un **JWT** (JSON Web Token) : une chaîne signée qui
+prouve son identité. Il le renvoie à chaque requête dans l'en-tête
+`Authorization: Bearer <token>`. « Bearer » veut dire « porteur » : quiconque possède le
+token est considéré comme l'utilisateur.
+
+Un token intercepté donne donc accès au compte jusqu'à son expiration. Servez l'API
+**uniquement en HTTPS**. Activez aussi **HSTS** sur votre reverse proxy (le serveur placé
+devant Node.js, comme Nginx). HSTS oblige le navigateur à toujours utiliser HTTPS.
 
 ### Limitation des tentatives de connexion
 
-La bibliothèque ne limite pas le nombre de tentatives : cette politique dépend de votre
-infrastructure. **Elle est indispensable** : sans elle, la route de connexion permet la
-force brute, et le coût d'Argon2id peut être utilisé pour saturer le CPU.
+Le **rate limiting** consiste à limiter le nombre de requêtes qu'un client peut faire sur une
+période. La bibliothèque ne le fait pas, car cela dépend de votre infrastructure.
 
-Politique recommandée (inspirée de l'OWASP) :
+**C'est pourtant indispensable.** Sans limite :
 
-| Limiteur | Clé | Seuil indicatif | Rôle |
+- un attaquant peut essayer des milliers de mots de passe (attaque par **force brute**) ;
+- comme Argon2id est volontairement coûteux, il peut aussi saturer le processeur du serveur.
+
+Nous recommandons deux limiteurs (politique inspirée de l'OWASP) :
+
+| Limiteur | Ce qui est compté | Seuil indicatif | Rôle |
 | --- | --- | --- | --- |
 | Par IP | adresse IP (IPv6 regroupée par /56) | 20 tentatives / 15 min | freine une machine qui teste beaucoup de comptes |
-| Par identifiant | hash SHA-256 de l'identifiant normalisé | 5 échecs / 15 min | freine les attaques réparties sur de nombreuses IP |
+| Par identifiant | hash SHA-256 de l'identifiant normalisé | 5 échecs / 15 min | freine une attaque sur un compte depuis de nombreuses IP |
 
-Exemple complet avec [`express-rate-limit`](https://www.npmjs.com/package/express-rate-limit),
-compatible avec plusieurs instances grâce à un store Redis partagé
-(code testé dans [examples/basic-express/src/rate-limit.js](../examples/basic-express/src/rate-limit.js)) :
+L'exemple ci-dessous utilise [`express-rate-limit`](https://www.npmjs.com/package/express-rate-limit).
+Les compteurs sont stockés dans **Redis** (une base clé-valeur en mémoire). Ainsi, toutes les
+instances de votre application partagent les mêmes compteurs. Une version testée de ce code
+se trouve dans [examples/basic-express/src/rate-limit.js](../examples/basic-express/src/rate-limit.js).
 
 ```bash
 npm install express-rate-limit rate-limit-redis redis
@@ -98,86 +124,117 @@ app.use(express.json({ limit: "10kb" }));
 app.post("/auth/login", loginLimiterByIp, loginLimiterByIdentifier, loginHandler);
 ```
 
+Ici, `loginHandler` est votre gestionnaire de connexion, par exemple `expressAuth.login()`.
+
 Points d'attention :
 
-- **`trust proxy`** : derrière un load balancer, réglez-le sur le nombre exact de proxys,
-  sinon `req.ip` est l'IP du proxy (tout le monde partage le même compteur) ou peut être
-  falsifiée via `X-Forwarded-For` (valeur `true` trop permissive).
-- **Store en mémoire** : sans Redis, chaque instance a ses propres compteurs ; la limite
-  effective est multipliée par le nombre d'instances.
-- **Limiteur par identifiant** : il permet à un attaquant de bloquer temporairement la
-  connexion d'une victime dont il connaît l'identifiant. C'est un compromis assumé ;
-  ajustez le seuil et la fenêtre, ou remplacez le blocage par un CAPTCHA.
+- **`trust proxy`** : derrière un load balancer ou un reverse proxy, indiquez le nombre
+  exact de proxys. Sinon, `req.ip` vaut l'IP du proxy, et tout le monde partage le même
+  compteur. À l'inverse, la valeur `true` est trop permissive : un client peut alors
+  falsifier son IP avec l'en-tête `X-Forwarded-For`.
+- **Sans Redis** : chaque instance garde ses propres compteurs en mémoire. Avec 4 instances,
+  la limite réelle est donc multipliée par 4.
+- **Nom du champ** : le limiteur par identifiant lit `req.body.identifier`. Si vous utilisez
+  `expressAuth.login({ identifierField: "email" })`, lisez `req.body.email` à la place.
+- **Blocage d'une victime** : le limiteur par identifiant permet à un attaquant de bloquer
+  temporairement la connexion d'une personne dont il connaît l'identifiant. C'est un
+  compromis assumé. Ajustez le seuil et la fenêtre, ou remplacez le blocage par un CAPTCHA.
 
 ### Révocation des JWT
 
-Un JWT d'accès est **sans état** : il reste cryptographiquement valide jusqu'à `exp`.
-Express AuthKit atténue cette limite ainsi :
+**Révoquer** un token, c'est le rendre inutilisable avant sa date d'expiration.
 
-| Situation | Effet immédiat ? | Mécanisme |
+Un JWT est **sans état** : le serveur ne garde aucune liste des tokens émis. Il vérifie
+seulement la signature et la date. Un token reste donc valide jusqu'à son expiration
+(`exp`), même si l'utilisateur se déconnecte.
+
+Express AuthKit réduit ce problème : à chaque requête, il relit l'utilisateur avec
+`findById()`. Voici ce qui se passe dans chaque situation :
+
+| Situation | Le token est-il refusé tout de suite ? | Pourquoi |
 | --- | --- | --- |
-| Compte désactivé (`isActive: false`) | **Oui** | `findById()` à chaque requête |
-| Compte supprimé | **Oui** | `findById()` renvoie `null` |
-| Changement de mot de passe | **Non** | les tokens existants restent valides jusqu'à expiration |
-| Déconnexion (« logout ») | **Non** | le client supprime son token ; il reste valide jusqu'à expiration |
-| Token volé | **Non** | valide jusqu'à expiration, sauf désactivation du compte |
-| Fuite du secret | **Oui, pour tous** | changez `AUTH_SECRET` : tous les tokens deviennent invalides |
+| Compte désactivé (`isActive: false`) | **Oui** | `findById()` est appelé à chaque requête. |
+| Compte supprimé | **Oui** | `findById()` renvoie `null`. |
+| Changement de mot de passe | **Non** | Les anciens tokens restent valides jusqu'à expiration. |
+| Déconnexion (« logout ») | **Non** | Le client efface son token, mais ce token reste valide jusqu'à expiration. |
+| Token volé | **Non** | Il reste valide jusqu'à expiration, sauf si vous désactivez le compte. |
+| Fuite du secret | **Oui, pour tous** | Changez `AUTH_SECRET` : tous les tokens deviennent invalides. |
 
-Recommandations :
+Ce que nous recommandons :
 
-- gardez une **durée de vie courte** (15 minutes par défaut, 24 h maximum) ;
-- pour invalider tous les tokens d'un utilisateur, désactivez temporairement le compte, ou
-  implémentez dans votre repository une règle supplémentaire (par exemple renvoyer
-  `isActive: false` tant qu'un drapeau de sécurité est levé) ;
-- une liste de révocation par `jti` et les refresh tokens sont des
-  [points d'extension futurs](architecture.md#points-dextension-futurs), non disponibles en 0.1.0.
+- Gardez une **durée de vie courte** : 15 minutes par défaut, 24 heures au maximum.
+- Pour couper l'accès d'un utilisateur, **désactivez temporairement son compte**.
+- Vous pouvez aussi ajouter une règle dans votre repository. Par exemple, renvoyer
+  `isActive: false` tant qu'un drapeau de sécurité est levé sur le compte.
+- Une liste de révocation par `jti` (l'identifiant unique de chaque token) et les refresh
+  tokens ne sont **pas disponibles** en 0.1.0. Ce sont des
+  [points d'extension futurs](architecture.md#points-dextension-futurs).
 
 ### Rotation du secret
 
-La version 0.1.0 accepte **un seul** secret. Changer `AUTH_SECRET` invalide immédiatement
-tous les tokens émis (les utilisateurs doivent se reconnecter). Planifiez la rotation en
-conséquence ; la rotation sans coupure (plusieurs clés, `kid`) est un point d'extension.
+Le **secret** est la clé qui signe les JWT. Celui qui le connaît peut fabriquer des tokens
+valides. La **rotation** consiste à le remplacer par un nouveau.
+
+- Générez le secret avec `npx express-authkit secret`. Gardez-le dans une variable
+  d'environnement (`AUTH_SECRET`), jamais dans le code.
+- La version 0.1.0 accepte **un seul** secret à la fois.
+- Changer `AUTH_SECRET` invalide immédiatement **tous** les tokens. Tous les utilisateurs
+  doivent se reconnecter. Planifiez la rotation en conséquence.
+- Une rotation sans coupure (plusieurs clés en parallèle, identifiées par `kid`) est un
+  point d'extension futur.
 
 ### Journalisation
 
-- Ne journalisez jamais `req.body` sur `/auth/*`, ni l'en-tête `Authorization`, ni les tokens.
+- Ne journalisez jamais `req.body` sur les routes `/auth/*`. Il contient le mot de passe.
+- Ne journalisez jamais l'en-tête `Authorization`, ni aucun token.
 - Configurez votre logger HTTP pour masquer ces champs (par exemple l'option `redact` de pino).
-- Journalisez les échecs avec `error.reason` côté serveur, sans l'identifiant en clair si
-  possible (voir [erreurs](erreurs.md#journaliser-les-échecs-de-connexion)).
+- Journalisez les échecs de connexion côté serveur avec `error.reason`. Évitez d'y mettre
+  l'identifiant en clair si possible (voir [erreurs](erreurs.md#journaliser-les-échecs-de-connexion)).
 
 ### En-têtes et durcissement HTTP
 
-- `app.disable("x-powered-by")` ou [`helmet`](https://www.npmjs.com/package/helmet).
+- Masquez l'en-tête `X-Powered-By` avec `app.disable("x-powered-by")`, ou utilisez
+  [`helmet`](https://www.npmjs.com/package/helmet).
 - Limitez la taille des corps JSON : `express.json({ limit: "10kb" })`.
-- `Cache-Control: no-store` sur les réponses contenant un token (fait automatiquement pour
-  les erreurs par l'adaptateur ; à ajouter sur votre réponse de connexion).
-- Configurez CORS avec une liste explicite d'origines.
+- Envoyez `Cache-Control: no-store` sur toute réponse qui contient un token. Ainsi, aucun
+  cache ne le conserve. L'adaptateur le fait déjà pour ses réponses d'erreur et pour la
+  réponse de `expressAuth.login()`. Si vous écrivez votre propre route de connexion avec
+  `auth.login()`, ajoutez-le vous-même.
+- Configurez **CORS** (les règles qui disent quels sites web peuvent appeler votre API)
+  avec une liste explicite d'origines.
 
 ### Stockage du token côté client
 
-L'adaptateur 0.1.0 lit uniquement l'en-tête `Authorization`. Conservez le token en mémoire
-quand c'est possible ; `localStorage` est accessible à tout script injecté (XSS). La gestion
-des cookies `HttpOnly` n'est pas fournie en 0.1.0.
+- L'adaptateur 0.1.0 lit le token **uniquement** dans l'en-tête `Authorization`.
+- Côté client, gardez le token **en mémoire** quand c'est possible.
+- Évitez `localStorage` : n'importe quel script injecté dans la page peut le lire (attaque
+  **XSS**, pour *cross-site scripting*).
+- Les cookies `HttpOnly` (illisibles par JavaScript) ne sont pas gérés en 0.1.0.
 
 ## Limites connues
 
-- **Pas de limitation intégrée des tentatives** : à mettre en place par l'application (voir ci-dessus).
-- **Atténuation temporelle partielle** : elle égalise le coût Argon2id entre compte inexistant,
-  mot de passe faux et compte désactivé. Elle ne masque pas les écarts propres à votre
-  repository (par exemple une requête plus lente quand l'utilisateur existe). Le premier
-  appel pour un compte inexistant calcule en plus le hash factice (une fois par processus).
-- **Détection heuristique des secrets faibles** : ne remplace pas une génération aléatoire.
-- **HMAC uniquement** : tous les services qui vérifient les tokens détiennent aussi la clé
-  permettant d'en émettre. Pour des vérificateurs tiers, il faudra un provider asymétrique.
-- **Un seul secret** : pas de rotation sans déconnexion des utilisateurs.
-- **Révocation** : voir le tableau ci-dessus.
-- **Coût par requête** : `verifyAccessToken()` appelle `findById()` à chaque requête
-  authentifiée ; prévoyez un index sur la clé primaire (c'est le cas par défaut) et
+- **Pas de limitation intégrée des tentatives.** C'est à votre application de la mettre en
+  place (voir [plus haut](#limitation-des-tentatives-de-connexion)).
+- **Égalisation du temps de réponse partielle.** Le coût d'Argon2id est le même pour un
+  compte inexistant, un mauvais mot de passe et un compte désactivé. Mais les écarts propres
+  à votre repository ne sont pas masqués (par exemple une requête SQL plus lente quand
+  l'utilisateur existe). De plus, la première tentative sur un compte inexistant calcule
+  aussi le hash factice (une seule fois par processus), ce qui la rend plus lente.
+- **Détection des secrets faibles approximative.** Elle repère les erreurs courantes, mais
+  ne remplace pas un secret généré aléatoirement.
+- **HMAC uniquement.** Avec **HMAC**, la même clé sert à signer et à vérifier. Tout service
+  qui vérifie les tokens peut donc aussi en fabriquer. Avec une **clé asymétrique**, une clé
+  privée signe et une clé publique vérifie. Pour des vérificateurs tiers, il vous faut un
+  [provider asymétrique](providers-personnalises.md) que vous écrivez vous-même.
+- **Un seul secret.** Pas de rotation sans déconnecter les utilisateurs.
+- **Révocation limitée.** Voir le [tableau de révocation](#révocation-des-jwt).
+- **Une lecture en base par requête.** `verifyAccessToken()` appelle `findById()` à chaque
+  requête authentifiée. Gardez un index sur la clé primaire (c'est le cas par défaut) et
   dimensionnez votre base en conséquence.
-- **Pas d'audit externe** : la version 0.1.0 n'a pas fait l'objet d'un audit de sécurité
-  indépendant. Les garanties ci-dessus sont celles couvertes par les tests automatisés.
+- **Pas d'audit externe.** La version 0.1.0 n'a pas été auditée par un expert indépendant.
+  Les garanties de cette page sont seulement celles couvertes par les tests automatisés.
 
-## Références
+## Pour aller plus loin
 
 - [OWASP Authentication Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html)
 - [OWASP Password Storage Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html)

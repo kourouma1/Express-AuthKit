@@ -1,12 +1,25 @@
 # Personnaliser les providers
 
-Express AuthKit fournit deux implémentations par défaut :
+**En bref** : un provider est la brique qui hache les mots de passe ou qui fabrique les tokens.
+Cette page montre comment remplacer celle fournie par défaut par la vôtre. Vous saurez signer
+vos tokens avec une clé Ed25519, migrer d'anciens mots de passe bcrypt et tester votre provider.
 
-- `createArgon2PasswordProvider()` pour les mots de passe ;
-- `createJwtTokenProvider()` pour les tokens (HMAC via `jose`).
+## Les deux notions à connaître
 
-Vous pouvez remplacer l'une ou l'autre en injectant un objet qui respecte le contrat
-correspondant, avec l'option `providers` :
+- **Provider** : un objet qui fait un travail précis pour la bibliothèque. Il en existe deux :
+  - le provider de **mots de passe** hache et vérifie les mots de passe ;
+  - le provider de **tokens** fabrique et vérifie les tokens d'accès.
+- **Contrat** : la liste des méthodes qu'un provider doit avoir, avec ce qu'elles reçoivent
+  et renvoient. Si votre objet respecte le contrat, la bibliothèque peut l'utiliser.
+
+Par défaut, Express AuthKit utilise :
+
+- `createArgon2PasswordProvider()` pour les mots de passe (algorithme Argon2id) ;
+- `createJwtTokenProvider()` pour les tokens (JWT signés en HMAC avec la bibliothèque `jose`).
+
+## Remplacer un provider
+
+Passez votre objet dans l'option `providers` de `createAuthKit()` :
 
 ```javascript
 const auth = createAuthKit({
@@ -18,37 +31,58 @@ const auth = createAuthKit({
 });
 ```
 
-Les contrats sont vérifiés au démarrage (`ContractViolationError` si une méthode manque).
-Combiner `jwt` et `providers.token` (ou `password` et `providers.password`) est refusé,
-car l'une des deux configurations serait ignorée silencieusement.
+Trois règles :
+
+- Vous pouvez remplacer un seul provider ou les deux.
+- Les contrats sont vérifiés au démarrage. S'il manque une méthode, vous obtenez une
+  `ContractViolationError`.
+- Ne combinez pas `jwt` avec `providers.token`, ni `password` avec `providers.password`.
+  C'est refusé (`ConfigurationError`), car une des deux configurations serait ignorée sans
+  avertissement.
 
 ## Contrat `PasswordProvider`
 
-| Méthode | Signature | Exigences |
+| Méthode | Signature | Ce qu'elle doit faire |
 | --- | --- | --- |
-| `hash` | `(password: string) => Promise<string>` | Algorithme éprouvé, sel aléatoire, hash autonome (paramètres inclus). |
-| `verify` | `(password: string, hash: string) => Promise<boolean>` | Comparaison en temps constant. Renvoyer **exactement** `true` en cas de succès (toute autre valeur est un échec). Lever `InvalidPasswordHashError` pour un hash illisible. |
+| `hash` | `(password: string) => Promise<string>` | Utiliser un algorithme éprouvé et un sel aléatoire. Le hash produit doit contenir tout ce qu'il faut pour le vérifier plus tard (algorithme, paramètres, sel). |
+| `verify` | `(password: string, hash: string) => Promise<boolean>` | Comparer en temps constant. Renvoyer **exactement** `true` si le mot de passe est bon : toute autre valeur compte comme un échec. Lever `InvalidPasswordHashError` si le hash est illisible. |
+
+*Temps constant* : la comparaison prend le même temps, que le mot de passe soit presque bon
+ou complètement faux. Un attaquant ne peut donc rien deviner en mesurant le temps de réponse.
 
 ## Contrat `TokenProvider`
 
-| Méthode | Signature | Exigences |
+| Méthode | Signature | Ce qu'elle doit faire |
 | --- | --- | --- |
-| `issue` | `({ subject }) => Promise<{ token, tokenId, issuedAt, expiresAt }>` | Dates en secondes Unix. Aucune donnée sensible dans le token. |
-| `verify` | `(token: string) => Promise<{ subject, tokenId, issuedAt, expiresAt }>` | Vérifier signature, algorithme (liste fermée), expiration, émetteur, audience, sujet. Lever `TokenExpiredError` si expiré, `InvalidTokenError` pour tout autre rejet. |
+| `issue` | `({ subject }) => Promise<{ token, tokenId, issuedAt, expiresAt }>` | Créer un token pour l'utilisateur `subject`. Les dates sont en secondes Unix. Ne mettre aucune donnée sensible dans le token. |
+| `verify` | `(token: string) => Promise<{ subject, tokenId, issuedAt, expiresAt }>` | Vérifier la signature, l'algorithme (liste fermée), l'expiration, l'émetteur, l'audience et le sujet. Lever `TokenExpiredError` si le token a expiré, `InvalidTokenError` pour tout autre refus. |
 
-Le moteur vérifie en plus que `subject` est une chaîne non vide, puis contrôle l'utilisateur
-avec `findById()` : cette protection reste active avec un provider personnalisé.
+Même avec votre provider, le moteur garde ses propres contrôles :
+
+- il vérifie que `subject` est une chaîne non vide ;
+- il relit l'utilisateur avec `findById()`, donc un compte supprimé ou désactivé est refusé.
 
 ## Exemple : tokens signés en Ed25519 (clé asymétrique)
 
-Utile quand d'autres services doivent **vérifier** les tokens sans pouvoir en **émettre** :
-seuls les serveurs d'authentification détiennent la clé privée.
+Le provider par défaut utilise **HMAC** : la même clé secrète sert à signer et à vérifier.
+Tout service capable de vérifier un token peut donc aussi en fabriquer.
+
+Avec une **clé asymétrique** comme Ed25519, il y a deux clés :
+
+- la **clé privée** signe les tokens. Seul votre serveur d'authentification la possède ;
+- la **clé publique** vérifie les tokens. Vous pouvez la donner aux autres services.
+
+Ainsi, les autres services peuvent **vérifier** les tokens sans pouvoir en **émettre**.
+
+**Étape 1** : générez une paire de clés.
 
 ```bash
 # Générer une paire de clés Ed25519
 openssl genpkey -algorithm ed25519 -out private.pem
 openssl pkey -in private.pem -pubout -out public.pem
 ```
+
+**Étape 2** : écrivez le provider.
 
 ```javascript
 // eddsa-token-provider.js
@@ -107,6 +141,8 @@ export async function createEdDsaTokenProvider({ privateKeyPem, publicKeyPem, is
 }
 ```
 
+**Étape 3** : branchez-le dans `createAuthKit()`.
+
 ```javascript
 // server.js
 import { readFile } from "node:fs/promises";
@@ -126,12 +162,16 @@ const auth = createAuthKit({
 });
 ```
 
-Un service qui ne fait que vérifier les tokens omet `privateKeyPem`.
+Un service qui ne fait que vérifier les tokens omet `privateKeyPem`. Il ne peut alors pas
+en émettre.
 
 ## Exemple : migration depuis bcrypt
 
-Ce provider accepte les anciens hash bcrypt et les remplace par un hash Argon2id dès que
-l'utilisateur se connecte avec succès. Il utilise `bcryptjs` (`npm install bcryptjs`).
+Vous avez une base avec d'anciens mots de passe hachés en **bcrypt** ? Ce provider les
+accepte. Quand un utilisateur se connecte avec succès, son hash bcrypt est remplacé par un
+hash Argon2id. Les comptes migrent donc au fil des connexions.
+
+Il utilise `bcryptjs` (`npm install bcryptjs`).
 
 ```javascript
 // migrating-password-provider.js
@@ -167,6 +207,8 @@ export function createMigratingPasswordProvider(replaceHash) {
 }
 ```
 
+Branchez-le en lui donnant une fonction qui enregistre le nouveau hash :
+
 ```javascript
 // server.js (avec pg)
 const auth = createAuthKit({
@@ -180,14 +222,18 @@ const auth = createAuthKit({
 });
 ```
 
-> Pendant la migration, bcrypt et Argon2id n'ont pas le même coût : la durée de réponse
-> peut révéler quel type de hash possède un compte. Limitez la durée de la période de
-> migration, puis forcez la réinitialisation des comptes restants.
+> **Attention** : bcrypt et Argon2id ne prennent pas le même temps de calcul. Pendant la
+> migration, un attaquant qui mesure le temps de réponse peut deviner quel type de hash
+> possède un compte. Gardez la période de migration courte. Ensuite, forcez la
+> réinitialisation du mot de passe des comptes qui n'ont pas migré.
 
 Ces deux exemples ont été exécutés avec la version 0.1.0 (connexion, vérification,
-ré-hachage, refus d'un token falsifié) ; ils ne font pas partie de la suite de tests du dépôt.
+ré-hachage, refus d'un token falsifié). Ils ne font pas partie de la suite de tests du dépôt.
 
 ## Tester un provider personnalisé
+
+`assertPasswordProvider()` et `assertTokenProvider()` vérifient qu'un objet a bien les
+méthodes du contrat :
 
 ```javascript
 import { generateKeyPairSync } from "node:crypto";
@@ -205,13 +251,22 @@ test("les providers respectent les contrats", async () => {
 });
 ```
 
-Testez aussi au minimum : token expiré, token signé avec une autre clé, mauvais émetteur et
-mauvaise audience (inspirez-vous de `tests/security/jwt-security.test.js`).
+Ces fonctions vérifient seulement la **présence** des méthodes, pas leur comportement.
+Testez donc aussi, au minimum, qu'un token est refusé quand il est :
 
-## Utiliser les providers par défaut séparément
+- expiré ;
+- signé avec une autre clé ;
+- émis par un mauvais émetteur ;
+- destiné à une mauvaise audience.
 
-Les providers intégrés sont exportés et peuvent servir hors de `createAuthKit()`, par exemple
-dans un script de migration :
+Inspirez-vous de `tests/security/jwt-security.test.js`.
+
+## Pour aller plus loin
+
+### Utiliser les providers par défaut séparément
+
+Les providers intégrés sont exportés. Vous pouvez les utiliser hors de `createAuthKit()`,
+par exemple dans un script de migration :
 
 ```javascript
 import { createArgon2PasswordProvider } from "express-authkit";
@@ -219,3 +274,8 @@ import { createArgon2PasswordProvider } from "express-authkit";
 const passwords = createArgon2PasswordProvider({ memoryCost: 65536, timeCost: 3, parallelism: 4 });
 const hash = await passwords.hash("new password from a reset flow");
 ```
+
+### Autres idées
+
+D'autres évolutions (liste de révocation, clés multiples avec JWKS, ré-hachage progressif)
+sont décrites dans les [points d'extension futurs](architecture.md#points-dextension-futurs).

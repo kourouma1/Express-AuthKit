@@ -1,16 +1,27 @@
 # Architecture
 
-Ce document décrit l'organisation interne d'Express AuthKit, les décisions de conception
-et les points d'extension prévus. Il s'adresse aux contributeurs et aux développeurs qui
-souhaitent remplacer une brique de la bibliothèque.
+**En bref** : cette page explique comment le code d'Express AuthKit est organisé et pourquoi.
+Elle s'adresse surtout aux contributeurs et à ceux qui veulent remplacer une brique. Après
+lecture, vous saurez où se trouve chaque partie du code et où brancher une future
+fonctionnalité.
 
-## Vue d'ensemble
+## L'idée principale
 
-Express AuthKit suit une **architecture hexagonale légère** : la logique d'authentification
-(le *Core*) ne connaît ni Express, ni la base de données, ni les bibliothèques
-cryptographiques. Elle dépend uniquement de **contrats** que d'autres modules implémentent.
+Express AuthKit suit une **architecture hexagonale** (version légère). L'idée est simple :
 
-```
+- Au centre, il y a le **Core** : la logique d'authentification (« ce mot de passe est-il
+  bon ? », « ce token est-il valide ? »).
+- Le Core ne connaît **ni Express, ni votre base de données, ni les bibliothèques de
+  cryptographie**.
+- Il communique avec l'extérieur par des **contrats**. Un contrat est une liste de méthodes
+  qu'un objet doit fournir. Par exemple : « donne-moi un utilisateur à partir de son e-mail ».
+- D'autres modules **implémentent** ces contrats : votre code pour la base de données, Argon2
+  pour les mots de passe, `jose` pour les tokens.
+
+Avantage : on peut changer une brique (passer de PostgreSQL à MongoDB, de HMAC à Ed25519,
+d'Express à un autre framework) sans toucher au Core.
+
+```text
                 ┌──────────────────────────────────────────────┐
   Application   │  Factory : createAuthKit(options)            │
   Express  ───► │   ├─ Configuration (validation, défauts)     │
@@ -25,37 +36,34 @@ cryptographiques. Elle dépend uniquement de **contrats** que d'autres modules i
   Adaptateur Express : createExpressAuth(auth) ──► auth.verifyAccessToken()
 ```
 
-Les dépendances pointent **vers le Core** :
+## Les modules
 
-| Module | Peut importer | Ne doit jamais importer |
-| --- | --- | --- |
-| `src/core/` | `src/core/` uniquement | Express, ORM, `jose`, `argon2`, providers, config |
-| `src/config/` | `src/core/errors.js` | Express, providers |
-| `src/providers/` | `src/core/`, `src/config/`, `jose`, `argon2` | Express |
-| `src/adapters/express/` | `src/core/`, `src/config/` | `express` (aucun import nécessaire) |
-| `src/factory/` | tout sauf les adaptateurs | — |
+| Module | Rôle |
+| --- | --- |
+| **Core** — `src/core/` | La logique : `login()` et `verifyAccessToken()`, les erreurs, les limites de taille des entrées, les contrats. |
+| **Configuration** — `src/config/` | Valide les options, applique des valeurs sûres par défaut, refuse les réglages dangereux. |
+| **Providers** — `src/providers/` | Les implémentations par défaut : Argon2id (mots de passe) et JWT HMAC via `jose` (tokens). |
+| **Factory** — `src/factory/` | `createAuthKit()` : assemble toutes les briques. C'est le seul endroit qui les connaît toutes. |
+| **Adaptateur** — `src/adapters/express/` | Fait le lien entre HTTP et le Core : lit le token `Bearer`, appelle le Core, transforme les erreurs en statuts HTTP. |
 
-Ces règles, l'absence d'import circulaire et l'absence de `console` dans la bibliothèque
-sont vérifiées par `tests/unit/architecture.test.js`.
+Quelques détails utiles :
 
-## Responsabilités
+- **Core** (`authentication-service.js`) : il valide les entrées et applique les règles de
+  sécurité (message d'erreur identique, compte actif obligatoire, égalisation du temps de
+  réponse). Il ne garde **aucun état par utilisateur**.
+- **Configuration** : elle refuse un secret absent, court ou faible, un algorithme hors
+  liste, une durée de vie trop longue, des coûts Argon2id trop faibles et les options
+  inconnues.
+- **Adaptateur** : il ajoute aussi l'en-tête `WWW-Authenticate` aux réponses 401.
 
-### Core — `src/core/`
+## Les contrats
 
-- `authentication-service.js` : cas d'usage `login()` et `verifyAccessToken()`.
-  Valide les entrées, applique la politique (message générique, compte actif, atténuation
-  temporelle) et orchestre les contrats. Aucun état par utilisateur.
-- `errors.js` : classes d'erreur et codes stables (`AUTH_ERROR_CODES`).
-- `input-limits.js` : bornes de taille appliquées aux données non fiables.
-- `contracts/` : contrats documentés en JSDoc et leurs vérifications à l'exécution.
+JavaScript n'a pas d'interfaces (comme en Java ou TypeScript). Chaque contrat est donc :
 
-### Contracts — `src/core/contracts/`
-
-JavaScript n'a pas d'interfaces. Chaque contrat est donc :
-
-1. décrit par un `@typedef` JSDoc (autocomplétion dans VS Code, WebStorm…) ;
-2. vérifié **structurellement au démarrage** (`assertUserRepository()`, etc.) ;
-3. vérifié **à l'exécution** pour les données renvoyées (`normalizeUserRecord()`).
+1. décrit en JSDoc (`@typedef`), pour l'autocomplétion dans VS Code, WebStorm… ;
+2. vérifié **au démarrage** : l'objet a-t-il les bonnes méthodes ? (`assertUserRepository()`, etc.) ;
+3. vérifié **pendant l'exécution** : les données renvoyées ont-elles la bonne forme ?
+   (par exemple un utilisateur renvoyé par le repository).
 
 | Contrat | Méthodes |
 | --- | --- |
@@ -65,30 +73,31 @@ JavaScript n'a pas d'interfaces. Chaque contrat est donc :
 | `AuthenticationService` | `login(credentials)`, `verifyAccessToken(token)` |
 | `AuthPrincipal` | objet figé `{ userId, tokenId, issuedAt, expiresAt }` |
 
-### Providers — `src/providers/`
+## Règles d'import
 
-- `argon2-password-provider.js` : Argon2id via le paquet `argon2` (implémentation C de référence).
-- `jwt-token-provider.js` : JWT HMAC via `jose`.
+Les dépendances pointent **vers le Core**, jamais l'inverse :
 
-### Configuration — `src/config/`
+| Module | Peut importer | Ne doit jamais importer |
+| --- | --- | --- |
+| `src/core/` | `src/core/` uniquement | Express, ORM, `jose`, `argon2`, providers, config |
+| `src/config/` | `src/core/errors.js` | Express, providers |
+| `src/providers/` | `src/core/`, `src/config/`, `jose`, `argon2` | Express |
+| `src/adapters/express/` | `src/core/`, `src/config/` | `express` (aucun import nécessaire) |
+| `src/factory/` | tout sauf les adaptateurs | — |
 
-Validation des options, valeurs sûres par défaut, refus des configurations dangereuses
-(secret absent/court/faible, algorithme hors liste, durée de vie excessive, coûts Argon2id
-trop faibles, options inconnues).
+`tests/unit/architecture.test.js` vérifie automatiquement une partie de ces règles :
 
-### Factory — `src/factory/`
+- le Core n'importe que des fichiers du Core ;
+- l'adaptateur n'importe pas `express` ;
+- il n'y a aucun import circulaire ;
+- la bibliothèque n'utilise jamais `console`.
 
-`createAuthKit()` valide les options, construit ou reçoit les providers, vérifie les
-contrats puis assemble le service. C'est le seul endroit qui connaît toutes les briques.
-
-### Adapters — `src/adapters/express/`
-
-Traduit HTTP ↔ Core : extraction du jeton `Bearer`, appel à `auth.verifyAccessToken()`,
-correspondance code d'erreur → statut HTTP, en-tête `WWW-Authenticate`.
+Les autres lignes du tableau (config, providers, factory) sont des conventions, à respecter
+lors des revues de code.
 
 ## Arborescence du dépôt
 
-```
+```text
 express-authkit/
 ├── src/
 │   ├── index.js                    # entrée publique "express-authkit"
@@ -108,58 +117,67 @@ express-authkit/
 └── .github/workflows/ci.yml
 ```
 
-## Décisions de conception
+## Plusieurs instances
 
-| Décision | Justification |
-| --- | --- |
-| **JavaScript + JSDoc, sans TypeScript** | Exigence du projet ; aucune étape de build, le code publié est le code source. |
-| **Node.js ≥ 22.12, 24 LTS recommandé** | Versions LTS maintenues en 2026 ; `fetch`, `crypto.randomUUID`, `--env-file`, test runner stable. Node 20 n'est plus maintenu depuis avril 2026. |
-| **`jose`** pour les JWT | Bibliothèque sans dépendance, maintenue, conforme aux RFC, API stricte (liste d'algorithmes, `typ`, claims obligatoires). |
-| **`argon2`** pour les mots de passe | Implémentation de référence, binaires précompilés, comparaison en temps constant. Le `crypto.argon2` natif de Node 24.7+ est encore expérimental. |
-| **HMAC (HS256/384/512) uniquement** en 0.1.0 | Le plus simple à déployer correctement avec un secret partagé. Les clés asymétriques sont un point d'extension (`providers.token`). |
-| **`typ: at+jwt`** exigé (RFC 9068) | Empêche qu'un autre JWT signé avec la même clé soit accepté comme jeton d'accès. |
-| **Vérification de l'utilisateur à chaque requête** | Permet de refuser immédiatement un compte désactivé ou supprimé, ce qu'un JWT seul ne permet pas. Coût : une lecture par requête (voir [sécurité](securite.md#révocation-des-jwt)). |
-| **`isActive` doit valoir exactement `true`** | Comportement « fail-closed » : une donnée manquante ne donne jamais accès. |
-| **Pas d'import d'Express dans l'adaptateur** | Le middleware est une simple fonction `(req, res, next)` ; Express reste une *peer dependency* facultative. |
-| **Objets retournés figés** (`Object.freeze`) | L'API publique et `req.auth` ne peuvent pas être modifiés par erreur par un autre middleware. |
-| **Node.js Test Runner + `fetch`** | Aucun framework de test ni `supertest` à installer. |
+Vous pouvez lancer plusieurs copies de l'application (processus, conteneurs, derrière un
+load balancer) :
 
-## Scalabilité
-
-- Les **JWT d'accès sont sans état** : n'importe quelle instance peut vérifier un jeton émis
-  par une autre, il suffit qu'elles partagent `AUTH_SECRET`, `issuer` et `audience`.
-- Aucun état mutable par utilisateur n'est conservé en mémoire : l'application peut tourner
-  derrière un load balancer, sur plusieurs processus ou conteneurs.
-- Le seul état interne est un hash factice calculé une fois par processus (atténuation
-  temporelle), identique pour tous les utilisateurs.
-- La limitation des tentatives est déléguée à l'application, avec un
-  [exemple Redis multi-instances](securite.md#limitation-des-tentatives-de-connexion).
-- Synchronisez les horloges (NTP) ; `jwt.clockToleranceSeconds` absorbe un léger décalage.
+- Les JWT sont **sans état** : le serveur ne garde pas de liste de tokens. N'importe quelle
+  instance peut vérifier un token émis par une autre. Il suffit qu'elles partagent
+  `AUTH_SECRET`, `issuer` et `audience`.
+- Aucune donnée par utilisateur n'est gardée en mémoire.
+- Seul état interne : un hash factice, calculé une fois par processus et identique pour tous
+  (il sert à égaliser le temps de réponse).
+- La limitation des tentatives est à la charge de l'application. Voir
+  l'[exemple Redis multi-instances](securite.md#limitation-des-tentatives-de-connexion).
+- Synchronisez les horloges des serveurs (NTP). L'option `jwt.clockToleranceSeconds`
+  absorbe un léger décalage.
 
 ## Points d'extension futurs
 
-Ces fonctionnalités **ne sont pas implémentées** en 0.1.0. Voici où elles s'intégreraient
-sans réécriture :
+Ces fonctionnalités **ne sont pas disponibles** en 0.1.0. Le tableau indique où elles
+pourraient s'ajouter sans tout réécrire.
 
-| Fonctionnalité | Point d'extension prévu |
+| Fonctionnalité | Où elle s'intégrerait |
 | --- | --- |
-| Refresh tokens | Nouveau contrat `RefreshTokenStore` (persistance + rotation) et cas d'usage `refresh()` dans le Core. Le `jti` déjà présent sert d'identifiant. |
-| Liste de révocation | Contrat facultatif interrogé par `verifyAccessToken()` avec `tokenId`. |
-| RBAC / permissions | Enrichissement contrôlé du principal à partir du repository, puis middleware `authorize()` dans l'adaptateur. |
-| Audit | Hook facultatif recevant les événements (`login.succeeded`, `login.failed` avec `error.reason`). |
-| Clés asymétriques (RS/ES/EdDSA, JWKS) | Nouveau `TokenProvider` ; le contrat est déjà indépendant de l'algorithme. |
-| Sessions / cookies | Nouvel adaptateur ou option de l'adaptateur Express, sans changer le Core. |
-| OAuth / OIDC | Nouveau cas d'usage produisant un principal via le même `TokenProvider`. |
+| Refresh tokens (tokens longs qui servent à obtenir un nouveau token d'accès) | Nouveau contrat `RefreshTokenStore` (stockage + rotation) et nouveau cas d'usage `refresh()` dans le Core. Le `jti` déjà présent servirait d'identifiant. |
+| Liste de révocation (tokens bloqués avant leur expiration) | Contrat facultatif interrogé par `verifyAccessToken()` avec le `tokenId`. |
+| RBAC / permissions (droits selon le rôle de l'utilisateur) | Ajout contrôlé d'informations au principal depuis le repository, puis middleware `authorize()` dans l'adaptateur. |
+| Audit | Hook facultatif qui recevrait les événements (`login.succeeded`, `login.failed` avec `error.reason`). |
+| Clés asymétriques (RS/ES/EdDSA, JWKS) | Nouveau `TokenProvider`. Le contrat ne dépend déjà d'aucun algorithme. |
+| Sessions / cookies | Nouvel adaptateur ou nouvelle option de l'adaptateur Express, sans changer le Core. |
+| OAuth / OIDC (connexion via Google, GitHub…) | Nouveau cas d'usage qui produirait un principal via le même `TokenProvider`. |
 | Fastify, Koa, Hono… | Nouveau dossier `src/adapters/<framework>/` et nouvelle entrée dans `exports`. |
 | Ré-hachage progressif | Méthode facultative `needsRehash()` sur `PasswordProvider`. |
 
-## Compatibilité CommonJS (future)
+## Pour aller plus loin
 
-Le package est **ESM uniquement**. Depuis Node.js 22.12, `require()` d'un module ES
-synchrone est pris en charge par défaut ; en pratique, un projet CommonJS peut donc déjà
-charger `express-authkit` avec `require()` sur les versions supportées, mais ce n'est
-**ni testé ni garanti** en 0.1.0. Une compatibilité officielle demanderait :
+### Décisions de conception
+
+| Décision | Pourquoi |
+| --- | --- |
+| **JavaScript + JSDoc, sans TypeScript** | Exigence du projet. Pas d'étape de build : le code publié est le code source. |
+| **Node.js ≥ 22.12, 24 LTS recommandé** | Versions LTS maintenues en 2026. Elles fournissent `fetch`, `crypto.randomUUID`, `--env-file` et un test runner stable. Node 20 n'est plus maintenu depuis avril 2026. |
+| **`jose`** pour les JWT | Sans dépendance, maintenue, conforme aux RFC. API stricte : liste d'algorithmes, `typ`, champs obligatoires. |
+| **`argon2`** pour les mots de passe | Implémentation de référence, binaires précompilés, comparaison en temps constant. Le `crypto.argon2` natif de Node 24.7+ est encore expérimental. |
+| **HMAC (HS256/384/512) uniquement** en 0.1.0 | Le plus simple à déployer correctement avec un secret partagé. Les clés asymétriques passent par `providers.token`. |
+| **`typ: at+jwt`** exigé (RFC 9068) | Empêche qu'un autre JWT signé avec la même clé soit accepté comme token d'accès. |
+| **Vérification de l'utilisateur à chaque requête** | Permet de refuser tout de suite un compte désactivé ou supprimé, ce qu'un JWT seul ne permet pas. Coût : une lecture en base par requête (voir [sécurité](securite.md#révocation-des-jwt)). |
+| **`isActive` doit valoir exactement `true`** | Principe « fail-closed » (fermé par défaut) : une donnée manquante ne donne jamais accès. |
+| **Pas d'import d'Express dans l'adaptateur** | Un middleware est une simple fonction `(req, res, next)`. Express reste une *peer dependency* facultative. |
+| **Objets retournés figés** (`Object.freeze`) | Un autre middleware ne peut pas modifier par erreur l'API publique ni `req.auth`. |
+| **Node.js Test Runner + `fetch`** | Aucun framework de test ni `supertest` à installer. |
+
+### Compatibilité CommonJS (future)
+
+Le package est **ESM uniquement** (il utilise `import`, pas `require`).
+
+Depuis Node.js 22.12, `require()` peut charger un module ES synchrone par défaut. En
+pratique, un projet CommonJS peut donc déjà charger `express-authkit` avec `require()` sur
+les versions supportées. Mais ce n'est **ni testé ni garanti** en 0.1.0.
+
+Une compatibilité officielle demanderait :
 
 1. des tests CI dédiés à `require("express-authkit")` ;
-2. une condition `"require"` explicite dans `exports` si une variante générée devient nécessaire ;
+2. une condition `"require"` explicite dans `exports`, si une variante générée devient nécessaire ;
 3. l'absence de `top-level await` dans `src/` (déjà le cas, à préserver).

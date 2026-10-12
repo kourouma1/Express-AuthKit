@@ -4,65 +4,50 @@
 
 # Express AuthKit
 
-> Moteur d'authentification sécurisé, léger et extensible pour Express.js.
-> Argon2id pour les mots de passe, JWT signés avec `jose`, votre base de données.
+**Ajoutez une connexion par e-mail et mot de passe à votre API Express, en quelques lignes, sans sacrifier la sécurité.**
 
-**Statut : version candidate 0.1.0, non publiée sur npm.** Voir les [limites connues](docs/securite.md#limites-connues).
+> Version 0.1.0 (candidate), pas encore publiée sur npm. Voir les [limites connues](docs/securite.md#limites-connues).
 
 ---
 
-## Présentation
+## En bref
 
-Express AuthKit regroupe ce qu'il faut pour authentifier les utilisateurs d'une API Express :
+Express AuthKit s'occupe pour vous de trois choses :
 
-- hachage et vérification des mots de passe avec **Argon2id** ;
-- émission et vérification strictes de **JWT d'accès** ;
-- connexion par **identifiant et mot de passe** ;
-- **middleware Express** qui protège vos routes ;
-- **erreurs structurées** et réponses HTTP propres ;
-- **configuration validée au démarrage** : un secret absent ou faible arrête l'application.
+1. **Stocker les mots de passe de façon sûre.** Vous ne gardez jamais le mot de passe, seulement une empreinte impossible à inverser.
+2. **Connecter un utilisateur.** S'il donne le bon mot de passe, il reçoit un *token* (un jeton signé, comme un badge d'accès temporaire).
+3. **Protéger vos routes.** Une route protégée refuse toute requête qui n'a pas de token valide.
 
-La bibliothèque **n'impose ni base de données, ni ORM, ni modèle utilisateur, ni routes** :
-vous fournissez un petit objet `users` qui sait retrouver un utilisateur, le reste est géré.
+Vous gardez votre base de données et votre modèle d'utilisateur. Vous écrivez seulement deux petites fonctions pour dire à la bibliothèque comment retrouver un utilisateur.
 
-## Pourquoi utiliser Express AuthKit ?
+## Les mots à connaître
 
-Sans bibliothèque dédiée, chaque projet réécrit les mêmes briques (JWT, hachage, middleware,
-gestion d'erreurs) et refait souvent les mêmes erreurs de sécurité : algorithme JWT non fixé,
-secret trop court, message d'erreur qui révèle l'existence d'un compte, compte désactivé
-qui reste utilisable, hash de mot de passe renvoyé par l'API…
-
-Express AuthKit applique ces règles par défaut, tout en restant remplaçable pièce par pièce
-(repository, hachage, tokens) grâce à l'injection de dépendances.
+| Mot | En clair |
+| --- | --- |
+| **Hash** (empreinte) | Version brouillée du mot de passe, impossible à inverser. On stocke le hash, jamais le mot de passe. |
+| **Token** (JWT) | Jeton signé remis après la connexion. Le client le renvoie à chaque requête pour prouver qui il est. Il expire après 15 minutes par défaut. |
+| **Secret** | Longue chaîne aléatoire qui sert à signer les tokens. Elle doit rester secrète. |
+| **Middleware** | Fonction Express qui s'exécute avant votre route, par exemple pour vérifier le token. |
+| **Repository** | Petit objet qui sait retrouver un utilisateur dans **votre** base de données. |
 
 ## Prérequis
 
-- **Node.js 22.12 ou plus récent** (Node.js 24 LTS recommandé).
-- **Express 4.21+ ou 5.x** pour l'adaptateur Express.
-- Un projet en **modules ES** (`"type": "module"` dans `package.json`).
-- Un environnement capable d'installer `argon2` (binaires précompilés fournis pour Linux,
-  macOS et Windows ; voir le [dépannage](docs/depannage.md) sinon).
+- **Node.js 22.12 ou plus récent** (la version 24 est recommandée).
+- **Express 4.21+ ou 5.x**.
+- Un projet en modules ES : `"type": "module"` dans `package.json`.
 
 ## Installation
-
-Une fois le package publié sur npm :
 
 ```bash
 npm install express-authkit express
 ```
 
-En attendant la publication, installez l'archive produite par `npm pack` :
-
-```bash
-# dans le dépôt express-authkit
-npm pack
-# dans votre projet
-npm install /chemin/vers/express-authkit-0.1.0.tgz express
-```
+> Tant que le package n'est pas publié sur npm, créez l'archive avec `npm pack` dans ce dépôt,
+> puis installez-la dans votre projet : `npm install /chemin/vers/express-authkit-0.1.0.tgz express`.
 
 ## Démarrage en cinq minutes
 
-**1. Créez un projet**
+**Étape 1 — Créez un projet**
 
 ```bash
 mkdir mon-api && cd mon-api
@@ -71,13 +56,17 @@ npm pkg set type=module
 npm install express-authkit express
 ```
 
-**2. Générez un secret** et placez-le dans un fichier `.env` :
+**Étape 2 — Créez un secret**
+
+Cette commande génère un secret aléatoire et l'enregistre dans un fichier `.env` :
 
 ```bash
 echo "AUTH_SECRET=$(npx express-authkit secret)" > .env
 ```
 
-**3. Créez `server.js`**
+Ne partagez jamais ce fichier et ne le mettez pas dans Git.
+
+**Étape 3 — Créez `server.js`**
 
 ```javascript
 import express from "express";
@@ -124,11 +113,14 @@ app.get("/profile", expressAuth.authenticate(), (req, res) => {
 app.listen(3000, () => console.log("API sur http://localhost:3000"));
 ```
 
-C'est tout : `expressAuth.login()` lit `email` et `password` dans le corps JSON et répond avec
-le token, ou avec une erreur JSON claire (400 / 401). `expressAuth.authenticate()` refuse
-toute requête sans token valide et place l'utilisateur dans `req.auth`.
+Ce que fait ce fichier, en quatre points :
 
-**4. Lancez et testez**
+1. **`userRepository`** explique à la bibliothèque comment trouver un utilisateur : par son e-mail (à la connexion) et par son identifiant (à chaque requête).
+2. **`createAuthKit()`** crée le moteur. Si le secret manque ou est trop faible, l'application refuse de démarrer et vous explique pourquoi.
+3. **`auth.password.hash()`** transforme le mot de passe en empreinte avant de l'enregistrer.
+4. **`expressAuth.login()`** crée la route de connexion, et **`expressAuth.authenticate()`** protège `/profile`. Dans la route protégée, `req.auth.userId` contient l'identifiant de l'utilisateur connecté.
+
+**Étape 4 — Lancez et testez**
 
 ```bash
 node --env-file=.env server.js
@@ -137,64 +129,74 @@ node --env-file=.env server.js
 Dans un autre terminal :
 
 ```bash
-# Connexion : renvoie { "accessToken": "...", "tokenType": "Bearer", "expiresIn": 900 }
+# 1. Se connecter : la réponse contient "accessToken"
 curl -s -X POST http://localhost:3000/login \
   -H "content-type: application/json" \
   -d '{"email":"alice@example.com","password":"example-password"}'
 
-# Route protégée sans token : 401 {"error":{"code":"TOKEN_MISSING",...}}
+# 2. Sans token : refusé (401)
 curl -i http://localhost:3000/profile
 
-# Route protégée avec le token : {"userId":"1"}
+# 3. Avec le token (remplacez <accessToken>) : {"userId":"1"}
 curl -s http://localhost:3000/profile -H "authorization: Bearer <accessToken>"
 ```
 
-> ⚠️ Avant la mise en production, ajoutez une **limitation des tentatives de connexion**
-> ([exemple compatible multi-instances](docs/securite.md#limitation-des-tentatives-de-connexion))
-> et servez l'API uniquement en **HTTPS**.
+Ça marche ? Votre API a maintenant une connexion sécurisée. 🎉
 
-Une application complète (repository, rate limiting avec Redis optionnel, tests) se trouve dans
-[examples/basic-express](examples/basic-express).
+Une application plus complète, avec ses tests, se trouve dans [examples/basic-express](examples/basic-express).
 
 ## L'essentiel en un coup d'œil
 
-| Besoin | Code |
+| Je veux… | Code |
 | --- | --- |
 | Créer le moteur | `const auth = createAuthKit({ users, jwt: { secret, issuer, audience } })` |
-| L'adapter à Express | `const expressAuth = createExpressAuth(auth)` |
-| Route de connexion | `app.post("/login", express.json(), expressAuth.login())` |
-| Protéger une route | `app.get("/me", expressAuth.authenticate(), handler)` → `req.auth.userId` |
+| Le brancher sur Express | `const expressAuth = createExpressAuth(auth)` |
+| Ajouter la route de connexion | `app.post("/login", express.json(), expressAuth.login())` |
+| Protéger une route | `app.get("/me", expressAuth.authenticate(), handler)` puis `req.auth.userId` |
 | Hacher un mot de passe (inscription) | `await auth.password.hash(password)` |
 | Vérifier un mot de passe | `await auth.password.verify(password, hash)` |
 | Générer un secret | `npx express-authkit secret` |
 
-Votre repository n'a que deux méthodes à écrire, `findByIdentifier()` et `findById()`, qui
-renvoient `{ id, passwordHash, isActive }` ou `null`. `id` peut être une chaîne, un entier
-(SQL) ou un `ObjectId` (MongoDB) : la conversion est automatique.
+**Votre repository** : deux fonctions, `findByIdentifier()` et `findById()`. Elles renvoient
+`{ id, passwordHash, isActive }`, ou `null` si l'utilisateur n'existe pas.
+`id` peut être un texte, un nombre ou un `ObjectId` MongoDB.
+
+## Avant de passer en production
+
+- [ ] Limitez le nombre de tentatives de connexion ([exemple prêt à copier](docs/securite.md#limitation-des-tentatives-de-connexion)).
+- [ ] Servez l'API uniquement en **HTTPS**.
+- [ ] Gardez le secret hors du code, dans une variable d'environnement.
+
+La liste complète se trouve dans le [guide de sécurité](docs/securite.md).
 
 ## Documentation
 
-| Sujet | Fichier |
-| --- | --- |
-| Architecture et choix de conception | [docs/architecture.md](docs/architecture.md) |
-| Configuration JWT et Argon2id | [docs/configuration.md](docs/configuration.md) |
-| Hachage et vérification des mots de passe | [docs/mots-de-passe.md](docs/mots-de-passe.md) |
-| Créer le repository utilisateur (Prisma, Mongoose, PostgreSQL…) | [docs/repository-utilisateur.md](docs/repository-utilisateur.md) |
-| Connexion des utilisateurs et protection des routes | [docs/connexion-et-routes.md](docs/connexion-et-routes.md) |
-| Gestion des erreurs | [docs/erreurs.md](docs/erreurs.md) |
-| Bonnes pratiques et limites de sécurité | [docs/securite.md](docs/securite.md) |
-| Référence de l'API publique | [docs/reference-api.md](docs/reference-api.md) |
-| Personnaliser les providers | [docs/providers-personnalises.md](docs/providers-personnalises.md) |
-| Dépannage et erreurs courantes | [docs/depannage.md](docs/depannage.md) |
-| Contribuer | [CONTRIBUTING.md](CONTRIBUTING.md) |
-| Historique des versions | [CHANGELOG.md](CHANGELOG.md) |
-| Signaler une vulnérabilité | [SECURITY.md](SECURITY.md) |
+**Pour démarrer**
 
-## Ce que la version 0.1.0 ne fait pas
+- [Brancher ma base de données](docs/repository-utilisateur.md) (PostgreSQL, Prisma, MongoDB…)
+- [Connecter les utilisateurs et protéger les routes](docs/connexion-et-routes.md)
+- [Gérer les mots de passe](docs/mots-de-passe.md) (inscription, changement de mot de passe)
+- [Régler la configuration](docs/configuration.md)
 
-Pas d'OAuth, de MFA, de RBAC, de refresh tokens, de sessions, de cookies ni de routes
-automatiques. Ces sujets sont des [points d'extension prévus](docs/architecture.md#points-dextension-futurs),
-pas des fonctionnalités disponibles.
+**Quand quelque chose ne va pas**
+
+- [Dépannage](docs/depannage.md)
+- [Comprendre les erreurs](docs/erreurs.md)
+
+**Pour aller plus loin**
+
+- [Sécurité : bonnes pratiques et limites](docs/securite.md)
+- [Référence complète de l'API](docs/reference-api.md)
+- [Remplacer le hachage ou les tokens](docs/providers-personnalises.md)
+- [Architecture du projet](docs/architecture.md)
+
+**Le projet** : [contribuer](CONTRIBUTING.md) · [historique des versions](CHANGELOG.md) · [signaler une faille](SECURITY.md)
+
+## Ce que la version 0.1.0 ne fait pas (encore)
+
+Pas de connexion via Google/GitHub (OAuth), pas de double authentification (MFA), pas de
+rôles ni de permissions, pas de refresh tokens, pas de sessions ni de cookies.
+Ces sujets sont [prévus pour plus tard](docs/architecture.md#points-dextension-futurs).
 
 ## Licence
 

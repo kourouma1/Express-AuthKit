@@ -1,9 +1,13 @@
 # Créer le repository utilisateur
 
-Express AuthKit ne contient aucune base de données. Vous lui fournissez un objet
-`users` qui sait retrouver un utilisateur : c'est le **contrat `UserRepository`**.
+> **En bref** — Express AuthKit ne contient aucune base de données. Vous lui donnez un petit
+> objet, le **repository utilisateur**, qui sait retrouver vos utilisateurs. Après cette page,
+> vous saurez écrire ce repository pour votre base (PostgreSQL, Prisma, MongoDB…) et le tester.
 
 ## Le contrat
+
+Un **repository** est simplement un objet qui fait le lien entre la bibliothèque et votre
+base de données. Il doit avoir deux méthodes :
 
 ```javascript
 /**
@@ -18,40 +22,51 @@ const userRepository = {
 };
 ```
 
-Les deux méthodes doivent renvoyer une promesse résolue avec :
+- `findByIdentifier(identifier)` est appelée à la **connexion**, avec l'e-mail ou le nom saisi.
+- `findById(id)` est appelée à **chaque requête authentifiée**, avec l'identifiant lu dans le token.
 
-- un **enregistrement** `{ id, passwordHash, isActive }` si l'utilisateur existe ;
-- `null` (ou `undefined`) sinon — **sans lever d'erreur**.
+Chaque méthode renvoie une promesse qui donne :
 
-| Champ | Type | Rôle |
-| --- | --- | --- |
-| `id` | chaîne, entier, `BigInt` ou `ObjectId` | Identifiant stable et non secret. Il est **converti automatiquement en chaîne** : il devient le `sub` du JWT et `req.auth.userId`. `findById()` reçoit donc toujours une chaîne (`"42"`, pas `42`). |
-| `passwordHash` | `string` | Hash produit par `auth.password.hash()`. |
-| `isActive` | `boolean` | Doit valoir **exactement** `true` pour autoriser l'accès. |
+- `{ id, passwordHash, isActive }` si l'utilisateur existe ;
+- `null` (ou `undefined`) sinon. **Ne levez pas d'erreur** dans ce cas.
 
-Les champs supplémentaires (e-mail, nom…) sont acceptés et ignorés : ils ne sont jamais
+Les trois champs attendus :
+
+- **`id`** : identifiant stable et non secret. Chaîne, entier, `BigInt` ou `ObjectId` MongoDB.
+  Il est **converti automatiquement en chaîne**. Il devient le `sub` du token et `req.auth.userId`.
+- **`passwordHash`** : le hash produit par `auth.password.hash()` (voir [mots de passe](mots-de-passe.md)).
+- **`isActive`** : un booléen. L'accès n'est autorisé que s'il vaut **exactement** `true`.
+
+Vous pouvez renvoyer d'autres champs (e-mail, nom…). Ils sont ignorés : ils ne sont jamais
 copiés dans le token ni dans `req.auth`.
 
 ### Règles importantes
 
-- **Normalisez l'identifiant** (`trim()`, minuscules pour un e-mail) dans `findByIdentifier`,
-  et utilisez la même normalisation à l'inscription.
-- **Ne levez une erreur que pour un problème d'infrastructure** (base indisponible…).
-  Elle est alors propagée telle quelle : avec l'adaptateur Express, elle arrive dans votre
-  gestionnaire d'erreurs (réponse 500).
-- Un enregistrement mal formé (`passwordHash` non sélectionné, `isActive` absent…) lève une
-  `ContractViolationError` dont le message indique comment corriger.
-- Votre modèle n'a pas de notion de compte désactivé ? Renvoyez simplement `isActive: true`.
-- `identifier` et `id` sont **toujours des chaînes** quand ils arrivent dans le repository :
-  le moteur refuse en amont tout autre type (protection contre l'injection d'opérateurs NoSQL
-  comme `{ "$ne": null }`). Utilisez tout de même des requêtes paramétrées.
-- Le contrat est vérifié **au démarrage** : une méthode manquante lève
+1. **`findById()` reçoit toujours une chaîne.** Elle reçoit `"42"`, pas `42`. Si votre
+   identifiant est un nombre, convertissez-le dans la requête.
+2. **`findById()` doit renvoyer le même `id`.** Une fois converti en chaîne, l'`id` renvoyé
+   doit être égal à celui reçu. Sinon, la bibliothèque lève une `ContractViolationError`.
+3. **Normalisez l'identifiant** dans `findByIdentifier` : `trim()` et minuscules pour un e-mail.
+   Utilisez exactement la même normalisation à l'inscription.
+4. **Ne levez une erreur que pour un problème technique** (base indisponible…). L'erreur est
+   transmise telle quelle. Avec l'adaptateur Express, elle arrive dans votre gestionnaire
+   d'erreurs (réponse 500).
+5. **Pas de compte désactivable ?** Renvoyez simplement `isActive: true`.
+6. **Utilisez des requêtes paramétrées.** La bibliothèque garantit déjà que `identifier` et
+   `id` sont des chaînes. Elle bloque ainsi les injections d'opérateurs NoSQL comme
+   `{ "$ne": null }`. Les requêtes paramétrées restent quand même indispensables.
+
+Deux erreurs vous aident à corriger un repository mal écrit :
+
+- Au **démarrage**, une méthode manquante lève
   `ContractViolationError: UserRepository must implement: findById().`
+- À l'**exécution**, un enregistrement mal formé (`passwordHash` oublié dans la requête,
+  `isActive` absent…) lève une `ContractViolationError`. Son message indique comment corriger.
 
 ### Mettre en correspondance un modèle existant
 
-Si vos colonnes portent d'autres noms (`password`, `enabled`, `status`…), faites la
-conversion dans le repository :
+Vos colonnes portent d'autres noms (`password`, `enabled`, `status`…) ? Faites la conversion
+dans le repository :
 
 ```javascript
 function toAuthRecord(row) {
@@ -72,7 +87,8 @@ export function createInMemoryUserRepository() {
 
   return {
     add(user) {
-      usersById.set(user.id, { ...user, email: user.email.trim().toLowerCase() });
+      // findById() reçoit toujours une chaîne : on range donc les utilisateurs par String(id).
+      usersById.set(String(user.id), { ...user, email: user.email.trim().toLowerCase() });
     },
     async findByIdentifier(identifier) {
       const email = identifier.trim().toLowerCase();
@@ -88,15 +104,18 @@ export function createInMemoryUserRepository() {
 }
 ```
 
+Les utilisateurs sont gardés dans une `Map`, indexée par leur `id` converti en texte.
+Ainsi, un `id` numérique (`42`) est bien retrouvé quand `findById()` reçoit `"42"`.
+
 Une version plus complète, utilisée par l'application d'exemple et ses tests, se trouve dans
 [examples/basic-express/src/in-memory-user-repository.js](../examples/basic-express/src/in-memory-user-repository.js).
 
 ## Exemples avec différentes bases de données
 
-> Ces exemples montrent l'adaptation au contrat. Ils supposent un schéma minimal
-> (`id`, `email` unique, `password_hash`, `is_active`) : adaptez les noms à votre schéma.
-> Ils ne font pas partie de la suite de tests automatisés du projet, qui n'utilise aucune
-> base de données réelle.
+> **À savoir** — Ces exemples montrent comment adapter le contrat. Ils supposent un schéma
+> minimal (`id`, `email` unique, `password_hash`, `is_active`) : adaptez les noms au vôtre.
+> Ils **ne sont pas couverts par les tests automatisés** du projet, qui n'utilisent aucune
+> vraie base de données.
 
 ### PostgreSQL avec `pg`
 
@@ -139,8 +158,9 @@ const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const auth = createAuthKit({ users: createPgUserRepository(pool), jwt: { /* … */ } });
 ```
 
-Les paramètres `$1` protègent contre l'injection SQL ; ne concaténez jamais l'identifiant
-dans la requête.
+- `AS "passwordHash"` renomme les colonnes pour qu'elles correspondent au contrat.
+- `$1` est un paramètre : il protège contre l'injection SQL. Ne collez jamais l'identifiant
+  directement dans le texte de la requête.
 
 ### Prisma
 
@@ -176,9 +196,10 @@ export function createPrismaUserRepository(prisma) {
 }
 ```
 
-`select` limite la lecture aux champs utiles. Si votre `id` est un entier (`Int @id`),
-renvoyez-le tel quel (il est converti en chaîne automatiquement) et convertissez le paramètre
-reçu par `findById` : `where: { id: Number(id) }`.
+- `select` ne lit que les champs utiles.
+- Votre `id` est un entier (`Int @id`) ? Renvoyez-le tel quel : il est converti en chaîne
+  automatiquement. En revanche, convertissez le paramètre reçu par `findById` :
+  `where: { id: Number(id) }`.
 
 ### MongoDB avec Mongoose
 
@@ -217,10 +238,48 @@ export function createMongooseUserRepository() {
 }
 ```
 
-`select: false` sur `passwordHash` évite que le hash ne soit renvoyé par les autres requêtes
-de l'application ; le repository le demande explicitement avec `+passwordHash`.
+- `select: false` cache `passwordHash` dans toutes les autres requêtes de votre application.
+- Le repository le demande explicitement avec `+passwordHash`.
+- Un `id` invalide renvoie `null`, pas une erreur : ce n'est pas une panne technique.
 
-### API distante (microservice utilisateurs)
+## Tester son repository
+
+Vous pouvez vérifier le contrat sans démarrer l'application :
+
+```javascript
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { assertUserRepository } from "express-authkit";
+
+import { createPgUserRepository } from "./user-repository.pg.js";
+
+// Faux pool : aucune base de données n'est nécessaire pour ces tests.
+const emptyPool = { query: async () => ({ rows: [] }) };
+
+test("respecte le contrat UserRepository", () => {
+  assert.doesNotThrow(() => assertUserRepository(createPgUserRepository(emptyPool)));
+});
+
+test("renvoie null pour un utilisateur inconnu", async () => {
+  const repository = createPgUserRepository(emptyPool);
+  assert.equal(await repository.findByIdentifier("nobody@example.com"), null);
+});
+```
+
+- Le premier test vérifie que les deux méthodes existent.
+- Le second vérifie qu'un utilisateur inconnu donne `null`, sans erreur.
+
+## Pour aller plus loin
+
+### Pourquoi `findById()` est appelée à chaque requête
+
+Un token seul ne sait pas si le compte a été supprimé ou désactivé depuis la connexion. En
+relisant l'utilisateur à chaque requête, la bibliothèque bloque **immédiatement** un compte
+supprimé ou passé à `isActive: false`. Gardez donc cette requête rapide (index sur `id`).
+
+### Utilisateurs dans une API distante (microservice)
+
+Vos utilisateurs sont gérés par un autre service ? Le repository peut l'interroger en HTTP :
 
 ```javascript
 /** @returns {import("express-authkit").UserRepository} */
@@ -243,26 +302,7 @@ export function createHttpUserRepository(baseUrl, serviceToken) {
 }
 ```
 
-## Tester son repository
-
-Le contrat peut être vérifié sans démarrer d'application :
-
-```javascript
-import assert from "node:assert/strict";
-import { test } from "node:test";
-import { assertUserRepository } from "express-authkit";
-
-import { createPgUserRepository } from "./user-repository.pg.js";
-
-// Faux pool : aucune base de données n'est nécessaire pour ces tests.
-const emptyPool = { query: async () => ({ rows: [] }) };
-
-test("respecte le contrat UserRepository", () => {
-  assert.doesNotThrow(() => assertUserRepository(createPgUserRepository(emptyPool)));
-});
-
-test("renvoie null pour un utilisateur inconnu", async () => {
-  const repository = createPgUserRepository(emptyPool);
-  assert.equal(await repository.findByIdentifier("nobody@example.com"), null);
-});
-```
+- Un 404 devient `null` : l'utilisateur n'existe pas.
+- Toute autre erreur est levée : c'est un problème technique.
+- `AbortSignal.timeout(2000)` évite d'attendre indéfiniment un service en panne.
+- `encodeURIComponent` empêche l'identifiant de modifier le chemin de l'URL.

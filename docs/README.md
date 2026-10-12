@@ -1,27 +1,39 @@
 # Documentation d'Express AuthKit
 
-Commencez par le [README](../README.md) : présentation, prérequis, installation et
-démarrage en cinq minutes.
+**En bref** : commencez par le [README](../README.md). En cinq minutes, vous aurez une API avec
+une route de connexion et une route protégée. Ensuite, choisissez la page qui répond à votre question.
 
-## Guides
+## Je débute
 
-1. [Configuration JWT et Argon2id](configuration.md)
-2. [Hachage et vérification des mots de passe](mots-de-passe.md)
-3. [Créer le repository utilisateur](repository-utilisateur.md) — PostgreSQL, Prisma, Mongoose, API distante
-4. [Connexion des utilisateurs et protection des routes Express](connexion-et-routes.md)
-5. [Gestion des erreurs](erreurs.md)
-6. [Bonnes pratiques et limites de sécurité](securite.md) — rate limiting, révocation des JWT
-7. [Personnaliser les providers](providers-personnalises.md) — Ed25519, migration bcrypt
+| Je veux… | Page |
+| --- | --- |
+| Brancher ma base de données (PostgreSQL, Prisma, MongoDB…) | [Repository utilisateur](repository-utilisateur.md) |
+| Connecter mes utilisateurs et protéger des routes | [Connexion et routes](connexion-et-routes.md) |
+| Gérer l'inscription et le changement de mot de passe | [Mots de passe](mots-de-passe.md) |
+| Changer la durée des tokens ou le secret | [Configuration](configuration.md) |
 
-## Référence
+## J'ai un problème
 
-- [API publique](reference-api.md)
-- [Architecture et points d'extension](architecture.md)
-- [Dépannage et erreurs courantes](depannage.md)
+| Situation | Page |
+| --- | --- |
+| Un message d'erreur, quelque chose ne marche pas | [Dépannage](depannage.md) |
+| Je veux comprendre ou personnaliser les erreurs renvoyées | [Erreurs](erreurs.md) |
 
-## Projet
+## Je prépare la production
 
-- [Application d'exemple](../examples/basic-express/README.md)
-- [Contribuer](../CONTRIBUTING.md)
-- [Historique des versions](../CHANGELOG.md)
-- [Politique de sécurité](../SECURITY.md)
+| Sujet | Page |
+| --- | --- |
+| Check-list de sécurité, limitation des tentatives, limites connues | [Sécurité](securite.md) |
+| Toutes les fonctions disponibles | [Référence de l'API](reference-api.md) |
+
+## Je veux aller plus loin
+
+| Sujet | Page |
+| --- | --- |
+| Utiliser d'autres clés de signature ou migrer depuis bcrypt | [Providers personnalisés](providers-personnalises.md) |
+| Comprendre comment le projet est construit | [Architecture](architecture.md) |
+| Voir une application complète et testée | [Exemple Express](../examples/basic-express/README.md) |
+
+## Le projet
+
+[Contribuer](../CONTRIBUTING.md) · [Historique des versions](../CHANGELOG.md) · [Signaler une faille](../SECURITY.md)

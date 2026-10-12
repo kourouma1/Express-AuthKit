@@ -1,8 +1,10 @@
 # Configuration
 
-Toute la configuration passe par `createAuthKit(options)`. Elle est **validée immédiatement** :
-une option manquante, inconnue ou dangereuse lève une `ConfigurationError` au démarrage de
-l'application, jamais pendant une requête.
+> **En bref** — Cette page explique comment configurer Express AuthKit avec `createAuthKit()`.
+> Vous saurez générer un secret sûr, régler la durée de vie des tokens et choisir le coût
+> du hachage des mots de passe.
+
+## Vue d'ensemble
 
 ```javascript
 import { createAuthKit } from "express-authkit";
@@ -25,73 +27,87 @@ const auth = createAuthKit({
 });
 ```
 
-Les options de premier niveau acceptées sont `users`, `jwt`, `password` et `providers`
-([providers personnalisés](providers-personnalises.md)). Toute autre clé est refusée,
-afin qu'une faute de frappe (`expiresIn` au lieu de `expiresInSeconds`) ne passe pas inaperçue.
+Vous passez un seul objet à `createAuthKit()`. Il contient quatre clés possibles :
+
+- `users` : l'objet qui lit vos utilisateurs en base (voir [le repository utilisateur](repository-utilisateur.md)). Obligatoire.
+- `jwt` : les réglages des tokens de connexion. Obligatoire.
+- `password` : les réglages du hachage des mots de passe. Facultatif.
+- `providers` : pour remplacer les briques par défaut ([providers personnalisés](providers-personnalises.md)). Rare.
+
+La configuration est **vérifiée dès le démarrage**. Une option manquante, inconnue ou
+dangereuse lève une `ConfigurationError` au lancement de l'application. Vous ne la découvrez
+donc jamais pendant une requête.
+
+Les clés inconnues sont refusées. Ainsi, une faute de frappe comme `expiresIn` au lieu de
+`expiresInSeconds` ne passe pas inaperçue.
 
 ## Configuration JWT
 
-| Option | Type | Défaut | Règle |
-| --- | --- | --- | --- |
-| `secret` | `string` ou `Uint8Array` | — | Obligatoire. ≥ 32 octets (HS256), ≥ 48 (HS384), ≥ 64 (HS512). Refusé s'il ressemble à une valeur d'exemple ou s'il est trop répétitif. |
-| `issuer` | `string` | — | Obligatoire, non vide, ≤ 256 caractères. Écrit dans `iss` et vérifié. |
-| `audience` | `string` | — | Obligatoire, non vide, ≤ 256 caractères. Écrit dans `aud` et vérifié. |
-| `expiresInSeconds` | entier | `900` | Entre 30 et 86 400 (24 h). |
-| `algorithm` | `"HS256"`, `"HS384"`, `"HS512"` | `"HS256"` | Seul algorithme accepté à la vérification. |
-| `clockToleranceSeconds` | entier | `0` | Entre 0 et 60. Décalage d'horloge toléré entre serveurs. |
+Un **JWT** (ou *token*) est un petit texte signé que votre API remet à l'utilisateur après
+sa connexion. L'utilisateur le renvoie ensuite à chaque requête pour prouver qui il est.
+
+| Option | Défaut | Ce qu'il faut savoir |
+| --- | --- | --- |
+| `secret` | — | **Obligatoire.** Chaîne ou `Uint8Array`. Au moins 32 octets (HS256), 48 (HS384) ou 64 (HS512). |
+| `issuer` | — | **Obligatoire.** Nom de votre API. 256 caractères maximum. |
+| `audience` | — | **Obligatoire.** Nom du client autorisé. 256 caractères maximum. |
+| `expiresInSeconds` | `900` (15 min) | Durée de vie du token. Entre 30 et 86 400 (24 h). |
+| `algorithm` | `"HS256"` | `"HS256"`, `"HS384"` ou `"HS512"`. |
+| `clockToleranceSeconds` | `0` | Décalage d'horloge accepté entre serveurs. Entre 0 et 60. |
+
+Quelques mots sur ces options :
+
+- Le **secret** est la clé qui signe les tokens. Quiconque le connaît peut fabriquer des tokens valides.
+- L'**issuer** (« émetteur ») indique qui a créé le token. Il est écrit dans le champ `iss` du token.
+- L'**audience** (« destinataire ») indique à qui le token est destiné. Il est écrit dans le champ `aud`.
+- À la vérification, un token dont `iss` ou `aud` ne correspond pas est refusé.
 
 ### Générer le secret
 
-Le secret doit provenir d'un générateur aléatoire cryptographiquement sûr, **jamais** d'un
-mot ou d'une phrase choisis à la main. La bibliothèque fournit une commande :
+1. Générez le secret avec la commande fournie :
 
-```bash
-npx express-authkit secret
-# ou directement dans le fichier .env :
-echo "AUTH_SECRET=$(npx express-authkit secret)" >> .env
-```
+   ```bash
+   npx express-authkit secret
+   # ou directement dans le fichier .env :
+   echo "AUTH_SECRET=$(npx express-authkit secret)" >> .env
+   ```
 
-Sans le package installé, la commande équivalente est :
+   Si le package n'est pas installé, cette commande fait la même chose :
 
-```bash
-node -e "console.log(require('node:crypto').randomBytes(48).toString('base64url'))"
-```
+   ```bash
+   node -e "console.log(require('node:crypto').randomBytes(48).toString('base64url'))"
+   ```
 
-Stockez-le dans une variable d'environnement (`AUTH_SECRET`) ou un gestionnaire de secrets
-(Vault, AWS Secrets Manager, GCP Secret Manager…). Ne le commitez jamais. Toutes les instances
-de l'API doivent utiliser **le même** secret.
+2. Stockez-le dans une variable d'environnement (`AUTH_SECRET`) ou dans un gestionnaire de
+   secrets (Vault, AWS Secrets Manager, GCP Secret Manager…).
+3. Utilisez **le même** secret sur toutes les instances de votre API.
 
-> La détection des secrets faibles est une **heuristique** : elle refuse les erreurs
-> courantes (valeur trop courte, `changeme`, `my-secret`, `aaaa…`), mais ne peut pas
-> prouver qu'un secret est aléatoire.
+> **Attention**
+>
+> - Le secret doit venir d'un générateur aléatoire sûr. N'utilisez **jamais** un mot ou une phrase choisis à la main.
+> - Ne commitez jamais le secret dans Git.
+> - La bibliothèque refuse les secrets manifestement faibles : trop courts, valeurs d'exemple
+>   (`changeme`, `my-secret`…) ou trop répétitifs (`aaaa…`). Ce contrôle est une simple
+>   **heuristique** : il attrape les erreurs courantes, mais il ne peut pas prouver qu'un
+>   secret est vraiment aléatoire.
 
 ### Pourquoi ces règles ?
 
-- **Liste d'algorithmes fixe** : empêche les attaques où un jeton annonce `alg: none`
-  ou un autre algorithme pour contourner la signature.
-- **`issuer` et `audience` obligatoires** : un jeton émis pour une autre application ou un
-  autre client, même signé avec le même secret, est refusé.
-- **Durée de vie courte** : un JWT ne peut pas être révoqué individuellement
-  (voir [révocation](securite.md#révocation-des-jwt)) ; 15 minutes limitent l'impact d'une fuite.
-- **Taille minimale de clé** : la RFC 7518 impose une clé au moins aussi longue que la sortie
-  du hachage (256 bits pour HS256).
-
-### Contenu des jetons émis
-
-```json
-// En-tête
-{ "alg": "HS256", "typ": "at+jwt" }
-// Charge utile
-{ "sub": "<user.id>", "iss": "my-api", "aud": "my-client", "iat": 1760000000, "exp": 1760000900, "jti": "<uuid>" }
-```
-
-Aucune donnée personnelle n'est ajoutée : la charge utile d'un JWT est seulement encodée
-en base64, **lisible par quiconque possède le jeton**.
-
-À la vérification, sont contrôlés : la signature, l'algorithme, `typ`, `iss`, `aud`, `exp`,
-`iat` (ni dans le futur, ni plus ancien que `expiresInSeconds`), la présence de `sub` et `jti`.
+- **Liste fixe d'algorithmes.** Un pirate ne peut pas envoyer un token marqué `alg: none`
+  (« pas de signature ») ou un autre algorithme pour contourner la vérification.
+- **`issuer` et `audience` obligatoires.** Un token créé pour une autre application est
+  refusé, même s'il est signé avec le même secret.
+- **Durée de vie courte.** Un JWT ne peut pas être annulé individuellement avant son
+  expiration (voir [révocation](securite.md#révocation-des-jwt)). 15 minutes limitent les
+  dégâts si un token est volé.
+- **Taille minimale du secret.** La RFC 7518 (la norme des JWT) exige une clé au moins aussi
+  longue que la signature produite : 256 bits pour HS256.
 
 ## Configuration Argon2id
+
+**Argon2id** est l'algorithme qui transforme un mot de passe en **hash** : une empreinte
+impossible à inverser. Il est volontairement lent et gourmand en mémoire, pour décourager
+les pirates qui essaient des milliards de mots de passe.
 
 | Option | Défaut | Minimum | Maximum | Unité |
 | --- | --- | --- | --- | --- |
@@ -99,12 +115,11 @@ en base64, **lisible par quiconque possède le jeton**.
 | `timeCost` | `3` | `2` | `20` | itérations |
 | `parallelism` | `4` | `1` | `16` | fils |
 
-Les valeurs par défaut correspondent à la deuxième recommandation de la RFC 9106 ; le minimum
-correspond à la recommandation OWASP (19 Mio, 2 itérations).
+Les valeurs par défaut suivent la RFC 9106 (la norme d'Argon2). Les minimums suivent la
+recommandation de l'OWASP (19 Mio, 2 itérations). Vous ne pouvez pas descendre en dessous.
 
-**Choisir ses paramètres** : visez 100 à 500 ms par hachage sur votre matériel de production
-et vérifiez la mémoire disponible (chaque connexion simultanée consomme `memoryCost`).
-Sur un petit conteneur (512 Mio), par exemple :
+Dans la plupart des cas, **gardez les valeurs par défaut**. Changez-les seulement si votre
+serveur manque de mémoire. Par exemple, sur un petit conteneur de 512 Mio :
 
 ```javascript
 const auth = createAuthKit({
@@ -114,8 +129,13 @@ const auth = createAuthKit({
 });
 ```
 
-Les paramètres sont enregistrés dans chaque hash : les modifier ne casse pas les hash existants,
-qui restent vérifiables avec leurs paramètres d'origine.
+Pour choisir vos valeurs :
+
+1. Visez 100 à 500 ms par hachage sur votre serveur de production.
+2. Vérifiez la mémoire disponible : **chaque connexion simultanée consomme `memoryCost`**.
+
+Vous pouvez changer ces valeurs plus tard sans risque. Les paramètres sont enregistrés dans
+chaque hash. Les anciens hash restent donc vérifiables avec leurs paramètres d'origine.
 
 ## Variables d'environnement recommandées
 
@@ -136,7 +156,7 @@ const auth = createAuthKit({
 });
 ```
 
-## Exemples d'erreurs de configuration
+## Erreurs de configuration fréquentes
 
 | Configuration | Message |
 | --- | --- |
@@ -147,3 +167,37 @@ const auth = createAuthKit({
 | `expiresInSeconds: 604800` | `` `jwt.expiresInSeconds` must be an integer between 30 and 86400. `` |
 | `password: { memoryCost: 4096 }` | `` `password.memoryCost` must be an integer between 19456 and 4194304. `` |
 | `jwt: { expiresIn: "1h", … }` | `` Unknown option(s) in `jwt`: expiresIn. Allowed: … `` |
+
+## Pour aller plus loin
+
+### Contenu des tokens émis
+
+```json
+// En-tête
+{ "alg": "HS256", "typ": "at+jwt" }
+// Charge utile
+{ "sub": "<user.id>", "iss": "my-api", "aud": "my-client", "iat": 1760000000, "exp": 1760000900, "jti": "<uuid>" }
+```
+
+Signification des champs :
+
+- `sub` : l'identifiant de l'utilisateur.
+- `iat` / `exp` : date de création et date d'expiration (en secondes).
+- `jti` : identifiant unique du token.
+
+Aucune donnée personnelle n'est ajoutée au token. C'est voulu : le contenu d'un JWT est
+seulement encodé en base64, pas chiffré. **Quiconque possède le token peut le lire.**
+
+À la vérification, la bibliothèque contrôle :
+
+- la signature et l'algorithme ;
+- le type `typ`, l'émetteur `iss` et le destinataire `aud` ;
+- l'expiration `exp` ;
+- la date `iat` : ni dans le futur, ni plus ancienne que `expiresInSeconds` ;
+- la présence de `sub` et de `jti`.
+
+### Fournir ses propres providers
+
+Avec `providers.token`, vous ne passez pas d'options `jwt`. Avec `providers.password`, vous
+ne passez pas d'options `password`. Les deux à la fois sont refusés. Voir
+[providers personnalisés](providers-personnalises.md).

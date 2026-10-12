@@ -27,14 +27,12 @@ export function resolvePasswordOptions(options = {}) {
   assertPlainObject(options, "password");
   assertKnownKeys(options, ALLOWED_KEYS, "password");
 
-  const resolved = {
-    memoryCost: options.memoryCost ?? ARGON2_DEFAULTS.memoryCost,
-    timeCost: options.timeCost ?? ARGON2_DEFAULTS.timeCost,
-    parallelism: options.parallelism ?? ARGON2_DEFAULTS.parallelism
-  };
-  assertIntegerInRange(resolved.memoryCost, "password.memoryCost", ARGON2_LIMITS.minMemoryCost, ARGON2_LIMITS.maxMemoryCost);
-  assertIntegerInRange(resolved.timeCost, "password.timeCost", ARGON2_LIMITS.minTimeCost, ARGON2_LIMITS.maxTimeCost);
-  assertIntegerInRange(resolved.parallelism, "password.parallelism", ARGON2_LIMITS.minParallelism, ARGON2_LIMITS.maxParallelism);
+  const memoryCost = options.memoryCost ?? ARGON2_DEFAULTS.memoryCost;
+  const timeCost = options.timeCost ?? ARGON2_DEFAULTS.timeCost;
+  const parallelism = options.parallelism ?? ARGON2_DEFAULTS.parallelism;
+  assertIntegerInRange(memoryCost, "password.memoryCost", ARGON2_LIMITS.minMemoryCost, ARGON2_LIMITS.maxMemoryCost);
+  assertIntegerInRange(timeCost, "password.timeCost", ARGON2_LIMITS.minTimeCost, ARGON2_LIMITS.maxTimeCost);
+  assertIntegerInRange(parallelism, "password.parallelism", ARGON2_LIMITS.minParallelism, ARGON2_LIMITS.maxParallelism);
 
-  return Object.freeze(resolved);
+  return Object.freeze({ memoryCost, timeCost, parallelism });
 }

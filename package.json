@@ -19,8 +19,14 @@
   "type": "module",
   "sideEffects": false,
   "exports": {
-    ".": "./src/index.js",
-    "./express": "./src/adapters/express/index.js",
+    ".": {
+      "types": "./types/index.d.ts",
+      "default": "./src/index.js"
+    },
+    "./express": {
+      "types": "./types/adapters/express/index.d.ts",
+      "default": "./src/adapters/express/index.js"
+    },
     "./package.json": "./package.json"
   },
   "bin": {
@@ -29,6 +35,7 @@
   "files": [
     "bin/",
     "src/",
+    "types/",
     "README.md",
     "CHANGELOG.md",
     "SECURITY.md",
@@ -42,25 +49,36 @@
     "test:coverage": "node --test --experimental-test-coverage \"tests/**/*.test.js\"",
     "test:package": "node scripts/verify-package.js",
     "lint": "eslint .",
-    "check": "npm run lint && npm test",
-    "prepublishOnly": "npm run check"
+    "check": "npm run lint && npm run typecheck && npm test",
+    "prepublishOnly": "npm run check",
+    "build:types": "node scripts/build-types.js",
+    "typecheck": "tsc -p tsconfig.types.json --noEmit --checkJs",
+    "prepack": "npm run build:types"
   },
   "dependencies": {
     "argon2": "^0.45.1",
     "jose": "^6.2.12"
   },
   "peerDependencies": {
-    "express": "^4.21.0 || ^5.0.0"
+    "express": "^4.21.0 || ^5.0.0",
+    "@types/express": "^4.17.0 || ^5.0.0"
   },
   "peerDependenciesMeta": {
     "express": {
+      "optional": true
+    },
+    "@types/express": {
       "optional": true
     }
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@types/express": "^5.0.6",
+    "@types/node": "^24.19.2",
     "eslint": "^10.12.0",
     "express": "^5.3.0",
-    "globals": "^17.13.0"
-  }
+    "globals": "^17.13.0",
+    "typescript": "^7.0.2"
+  },
+  "types": "./types/index.d.ts"
 }

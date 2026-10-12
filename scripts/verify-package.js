@@ -20,6 +20,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const NPM = process.platform === "win32" ? "npm.cmd" : "npm";
+const ALLOWED_DIRECTORIES = ["src/", "bin/", "types/"];
 const ALLOWED_TOP_LEVEL = new Set(["package.json", "README.md", "CHANGELOG.md", "SECURITY.md", "LICENSE"]);
 
 function run(command, args, cwd) {
@@ -27,15 +28,27 @@ function run(command, args, cwd) {
 }
 
 async function packAndInspect(workDir) {
-  const [pack] = JSON.parse(run(NPM, ["pack", "--json", "--pack-destination", workDir], ROOT));
+  // Les types sont générés ici, puis `npm pack` est lancé sans scripts :
+  // sinon la sortie de `prepack` se mélangerait au JSON de `npm pack --json`.
+  run(NPM, ["run", "build:types"], ROOT);
+  const [pack] = JSON.parse(run(NPM, ["pack", "--json", "--ignore-scripts", "--pack-destination", workDir], ROOT));
   const paths = pack.files.map((file) => file.path);
 
   for (const path of paths) {
-    const allowed = path.startsWith("src/") || path.startsWith("bin/") || ALLOWED_TOP_LEVEL.has(path);
+    const allowed = ALLOWED_DIRECTORIES.some((directory) => path.startsWith(directory)) || ALLOWED_TOP_LEVEL.has(path);
     assert.ok(allowed, `Unexpected file in the package: ${path}`);
-    assert.ok(!/\.env|\.pem$|\.key$|\.ts$/.test(path), `Sensitive or forbidden file in the package: ${path}`);
+    // Seules les déclarations générées (.d.ts) sont autorisées : aucune source TypeScript.
+    const isTypeScriptSource = path.endsWith(".ts") && !path.endsWith(".d.ts");
+    assert.ok(!/\.env|\.pem$|\.key$/.test(path) && !isTypeScriptSource, `Sensitive or forbidden file in the package: ${path}`);
   }
-  for (const required of ["src/index.js", "src/adapters/express/index.js", "README.md", "LICENSE"]) {
+  for (const required of [
+    "src/index.js",
+    "src/adapters/express/index.js",
+    "types/index.d.ts",
+    "types/adapters/express/index.d.ts",
+    "README.md",
+    "LICENSE"
+  ]) {
     assert.ok(paths.includes(required), `Missing file in the package: ${required}`);
   }
 
@@ -50,6 +63,18 @@ async function verifyBlankProject(workDir, tarball) {
   process.stdout.write(run(process.execPath, ["consumer.js"], projectDir));
   console.log("✔ blank JavaScript project");
   await verifyReadmeQuickstart(projectDir);
+  await verifyTypes(projectDir);
+}
+
+/**
+ * Vérifie les types publiés comme le ferait un utilisateur de TypeScript ou
+ * de VS Code : typed-consumer.js est contrôlé par tsc en mode strict.
+ */
+async function verifyTypes(projectDir) {
+  run(NPM, ["install", "--no-audit", "--no-fund", "typescript@^7", "@types/express@^5", "@types/node@^24"], projectDir);
+  const tsc = join(projectDir, "node_modules", "typescript", "bin", "tsc");
+  run(process.execPath, [tsc, "-p", join(projectDir, "tsconfig.json")], projectDir);
+  console.log("✔ TypeScript types (strict check of a consumer file, @ts-expect-error included)");
 }
 
 /**

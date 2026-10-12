@@ -93,11 +93,13 @@ app.post("/me/password", expressAuth.authenticate(), async (req, res, next) => {
     const user = await db.users.findById(req.auth.userId);
 
     if (!(await auth.password.verify(currentPassword, user.passwordHash))) {
-      res.status(403).json({ error: { code: "INVALID_PASSWORD", message: "Current password is incorrect." } });
+      res.status(403).json({ error: { code: "INVALID_PASSWORD", message: "Le mot de passe actuel est incorrect." } });
       return;
     }
 
     await db.users.update(user.id, { passwordHash: await auth.password.hash(newPassword) });
+    // Ferme toutes les sessions ouvertes ailleurs (nécessite l'option refreshTokens).
+    await auth.revokeAllSessions(user.id);
     res.status(204).end();
   } catch (error) {
     next(error);
@@ -110,10 +112,11 @@ app.post("/me/password", expressAuth.authenticate(), async (req, res, next) => {
 1. `authenticate()` vérifie que l'utilisateur est connecté et remplit `req.auth`.
 2. La route relit l'utilisateur et vérifie son mot de passe actuel.
 3. Si c'est le bon, elle enregistre le hash du nouveau mot de passe.
+4. Elle ferme toutes les autres sessions avec `revokeAllSessions()` : un éventuel voleur est
+   déconnecté. Sans l'option [`refreshTokens`](refresh-tokens.md), supprimez cette ligne.
 
-> **Attention** — Après un changement de mot de passe, les tokens déjà émis **restent
-> valides** jusqu'à leur expiration. Pour les invalider tout de suite, voir
-> [révocation](securite.md#révocation-des-jwt).
+> **Attention** — Les **tokens d'accès** déjà émis restent valides jusqu'à leur expiration
+> (15 minutes par défaut). Voir [révocation](securite.md#révocation-des-jwt).
 
 ## Bonnes pratiques
 

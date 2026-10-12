@@ -36,6 +36,7 @@ Toutes ces erreurs héritent de la classe `AuthKitError`.
 | `TOKEN_MISSING` | 401 | Pas de token `Bearer` | « Authentification requise. » |
 | `TOKEN_INVALID` | 401 | Token mal formé, falsifié, mauvais `iss`/`aud`/`typ`/algorithme, utilisateur supprimé ou désactivé | « Jeton d’accès invalide. » |
 | `TOKEN_EXPIRED` | 401 | Token expiré (signature valide) | « Jeton d’accès expiré. » |
+| `REFRESH_TOKEN_INVALID` | 401 | Refresh token inconnu, expiré, déjà utilisé ou révoqué ([refresh tokens](refresh-tokens.md)) | « Jeton de rafraîchissement invalide ou expiré. Reconnectez-vous. » |
 
 - **400** : la requête est mal formée.
 - **401** : la personne n'est pas authentifiée.

@@ -53,3 +53,14 @@ export const ARGON2_LIMITS = Object.freeze({
   minParallelism: 1,
   maxParallelism: 16
 });
+
+export const REFRESH_TOKEN_DEFAULTS = Object.freeze({
+  /** 14 jours : l’utilisateur reste connecté s’il revient au moins toutes les deux semaines. */
+  expiresInSeconds: 1_209_600
+});
+
+export const REFRESH_TOKEN_LIMITS = Object.freeze({
+  minExpiresInSeconds: 300,
+  /** 90 jours au plus : au-delà, une session oubliée reste exploitable trop longtemps. */
+  maxExpiresInSeconds: 7_776_000
+});

@@ -35,6 +35,8 @@ import { getClientErrorStatus, resolveClientError, sendClientError } from "./htt
  * @typedef {Readonly<{
  *   authenticate: () => import("express").RequestHandler,
  *   login: (options?: LoginHandlerOptions) => import("express").RequestHandler,
+ *   refresh: () => import("express").RequestHandler,
+ *   logout: () => import("express").RequestHandler,
  *   errorHandler: () => import("express").ErrorRequestHandler
  * }>} ExpressAuth
  */
@@ -76,6 +78,7 @@ export function createExpressAuth(auth, options = {}) {
    * inattendues sont transmises à `next(error)`.
    *
    * @returns {import("express").RequestHandler}
+   * @param {...unknown} unexpectedArguments Doit rester vide (détecte l’oubli des parenthèses).
    */
   function authenticate(...unexpectedArguments) {
     assertCalledAsFactory("authenticate", unexpectedArguments);
@@ -87,13 +90,15 @@ export function createExpressAuth(auth, options = {}) {
       } catch (error) {
         const status = getClientErrorStatus(error);
         if (status !== undefined) {
-          sendClientError(res, error, status, realm);
+          sendClientError(res, /** @type {import("../../core/errors.js").AuthKitError} */ (error), status, realm);
           return;
         }
         next(error);
         return;
       }
-      req.auth = principal;
+      /** @type {import("express").Request & { auth?: import("../../core/contracts/auth-principal.js").AuthPrincipal }} */ (
+        req
+      ).auth = principal;
       next();
     };
   }
@@ -113,6 +118,7 @@ export function createExpressAuth(auth, options = {}) {
    *
    * @param {LoginHandlerOptions} [loginOptions]
    * @returns {import("express").RequestHandler}
+   * @param {...unknown} unexpectedArguments Doit rester vide (détecte l’oubli des parenthèses).
    */
   function login(loginOptions = {}, ...unexpectedArguments) {
     assertCalledAsFactory("login", unexpectedArguments);
@@ -121,27 +127,84 @@ export function createExpressAuth(auth, options = {}) {
     return async function loginRequest(req, res, next) {
       let result;
       try {
-        const body = req.body;
-        if (body === undefined || body === null || typeof body !== "object") {
-          throw new InvalidInputError(PUBLIC_MESSAGES.missingJsonBody);
-        }
+        const body = readJsonBody(req);
         // Object.hasOwn évite de lire une propriété héritée du prototype.
         const identifier = Object.hasOwn(body, identifierField) ? body[identifierField] : undefined;
         const password = Object.hasOwn(body, "password") ? body.password : undefined;
         // Vérifié ici pour que le message cite le vrai nom du champ (« email »…).
         assertIdentifierField(identifier, identifierField);
-        result = await auth.login({ identifier, password });
+        // Le type exact du mot de passe est vérifié par auth.login().
+        result = await auth.login({ identifier, password: /** @type {string} */ (password) });
       } catch (error) {
         const status = getClientErrorStatus(error);
         if (status !== undefined) {
-          sendClientError(res, error, status, realm);
+          sendClientError(res, /** @type {import("../../core/errors.js").AuthKitError} */ (error), status, realm);
           return;
         }
         next(error);
         return;
       }
+      sendSession(res, result);
+    };
+  }
+
+  /**
+   * Gestionnaire de rafraîchissement : lit `refreshToken` dans le corps JSON
+   * et répond avec une nouvelle paire de jetons (l’ancien jeton est invalidé).
+   * Nécessite l’option `refreshTokens` de `createAuthKit()`.
+   *
+   * @example
+   * app.post("/auth/refresh", express.json(), expressAuth.refresh());
+   *
+   * @returns {import("express").RequestHandler}
+   * @param {...unknown} unexpectedArguments Doit rester vide (détecte l’oubli des parenthèses).
+   */
+  function refresh(...unexpectedArguments) {
+    assertCalledAsFactory("refresh", unexpectedArguments);
+    return handleJson(async (body, res) => {
+      sendSession(res, await auth.refresh(readRefreshToken(body)));
+    });
+  }
+
+  /**
+   * Gestionnaire de déconnexion : lit `refreshToken` dans le corps JSON,
+   * révoque la session et répond 204 (sans contenu). Répond 204 aussi si la
+   * session était déjà révoquée : se déconnecter deux fois n’est pas une erreur.
+   *
+   * @example
+   * app.post("/auth/logout", express.json(), expressAuth.logout());
+   *
+   * @returns {import("express").RequestHandler}
+   * @param {...unknown} unexpectedArguments Doit rester vide (détecte l’oubli des parenthèses).
+   */
+  function logout(...unexpectedArguments) {
+    assertCalledAsFactory("logout", unexpectedArguments);
+    return handleJson(async (body, res) => {
+      await auth.logout(readRefreshToken(body));
       res.set("Cache-Control", "no-store");
-      res.json({ accessToken: result.accessToken, tokenType: result.tokenType, expiresIn: result.expiresIn });
+      res.status(204).end();
+    });
+  }
+
+  /**
+   * Enveloppe commune des gestionnaires qui lisent un corps JSON : les
+   * erreurs client reçoivent une réponse JSON, les autres vont à `next()`.
+   *
+   * @param {(body: Record<string, unknown>, res: import("express").Response) => Promise<void>} handle
+   * @returns {import("express").RequestHandler}
+   */
+  function handleJson(handle) {
+    return async function jsonRequest(req, res, next) {
+      try {
+        await handle(readJsonBody(req), res);
+      } catch (error) {
+        const status = getClientErrorStatus(error);
+        if (status !== undefined && !res.headersSent) {
+          sendClientError(res, /** @type {import("../../core/errors.js").AuthKitError} */ (error), status, realm);
+          return;
+        }
+        next(error);
+      }
     };
   }
 
@@ -151,6 +214,7 @@ export function createExpressAuth(auth, options = {}) {
    * sont transmises sans modification au gestionnaire suivant.
    *
    * @returns {import("express").ErrorRequestHandler}
+   * @param {...unknown} unexpectedArguments Doit rester vide (détecte l’oubli des parenthèses).
    */
   function errorHandler(...unexpectedArguments) {
     assertCalledAsFactory("errorHandler", unexpectedArguments);
@@ -164,7 +228,7 @@ export function createExpressAuth(auth, options = {}) {
     };
   }
 
-  return Object.freeze({ authenticate, login, errorHandler });
+  return Object.freeze({ authenticate, login, refresh, logout, errorHandler });
 }
 
 /**
@@ -198,6 +262,7 @@ function assertCalledAsFactory(method, unexpectedArguments) {
 /**
  * @param {unknown} identifier
  * @param {string} field
+ * @returns {asserts identifier is string}
  */
 function assertIdentifierField(identifier, field) {
   if (typeof identifier !== "string" || identifier.length === 0) {
@@ -206,4 +271,46 @@ function assertIdentifierField(identifier, field) {
   if (identifier.length > MAX_IDENTIFIER_LENGTH) {
     throw new InvalidInputError(fieldTooLong(field, MAX_IDENTIFIER_LENGTH));
   }
+}
+
+/**
+ * @param {import("express").Request} req
+ * @returns {Record<string, unknown>}
+ * @throws {InvalidInputError}
+ */
+function readJsonBody(req) {
+  const body = req.body;
+  if (body === undefined || body === null || typeof body !== "object") {
+    throw new InvalidInputError(PUBLIC_MESSAGES.missingJsonBody);
+  }
+  return body;
+}
+
+/**
+ * Lit le champ sans le valider : auth.refresh() et auth.logout() vérifient
+ * eux-mêmes que c’est un texte non vide.
+ *
+ * @param {Record<string, unknown>} body
+ * @returns {string} Type annoncé ; la valeur réelle est validée par le Core.
+ */
+function readRefreshToken(body) {
+  const value = Object.hasOwn(body, "refreshToken") ? body.refreshToken : undefined;
+  return /** @type {string} */ (value);
+}
+
+/**
+ * Envoie une paire de jetons. Le principal interne n’est pas inclus.
+ *
+ * @param {import("express").Response} res
+ * @param {import("../../core/contracts/authentication-service.js").LoginResult} result
+ */
+function sendSession(res, result) {
+  /** @type {{ accessToken: string, tokenType: string, expiresIn: number, refreshToken?: string, refreshExpiresIn?: number }} */
+  const body = { accessToken: result.accessToken, tokenType: result.tokenType, expiresIn: result.expiresIn };
+  if (result.refreshToken !== undefined) {
+    body.refreshToken = result.refreshToken;
+    body.refreshExpiresIn = result.refreshExpiresIn;
+  }
+  res.set("Cache-Control", "no-store");
+  res.json(body);
 }

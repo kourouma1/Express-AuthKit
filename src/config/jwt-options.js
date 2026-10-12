@@ -55,7 +55,7 @@ export function resolveJwtOptions(options) {
   assertKnownKeys(options, ALLOWED_KEYS, "jwt");
 
   const algorithm = options.algorithm ?? JWT_DEFAULTS.algorithm;
-  if (!Object.hasOwn(JWT_ALGORITHM_MIN_KEY_BYTES, algorithm)) {
+  if (typeof algorithm !== "string" || !Object.hasOwn(JWT_ALGORITHM_MIN_KEY_BYTES, algorithm)) {
     throw new ConfigurationError(unsupportedAlgorithm(Object.keys(JWT_ALGORITHM_MIN_KEY_BYTES)));
   }
 

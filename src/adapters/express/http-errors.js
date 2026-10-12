@@ -13,10 +13,12 @@ const CLIENT_ERROR_STATUSES = Object.freeze({
   [AUTH_ERROR_CODES.INVALID_CREDENTIALS]: 401,
   [AUTH_ERROR_CODES.TOKEN_MISSING]: 401,
   [AUTH_ERROR_CODES.TOKEN_INVALID]: 401,
-  [AUTH_ERROR_CODES.TOKEN_EXPIRED]: 401
+  [AUTH_ERROR_CODES.TOKEN_EXPIRED]: 401,
+  [AUTH_ERROR_CODES.REFRESH_TOKEN_INVALID]: 401
 });
 
 /** Code d’erreur RFC 6750 §3.1 pour les jetons Bearer rejetés. */
+/** @type {ReadonlySet<string>} */
 const INVALID_TOKEN_CODES = new Set([AUTH_ERROR_CODES.TOKEN_INVALID, AUTH_ERROR_CODES.TOKEN_EXPIRED]);
 
 /**
@@ -41,7 +43,8 @@ export function resolveClientError(error) {
   if (status !== undefined) {
     return { error: /** @type {import("../../core/errors.js").AuthKitError} */ (error), status };
   }
-  const bodyParserErrorType = error !== null && typeof error === "object" ? error.type : undefined;
+  const bodyParserErrorType =
+    error !== null && typeof error === "object" ? /** @type {{ type?: unknown }} */ (error).type : undefined;
   if (bodyParserErrorType === "entity.parse.failed") {
     return { error: new InvalidInputError(PUBLIC_MESSAGES.malformedJsonBody), status: 400 };
   }

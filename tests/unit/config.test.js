@@ -135,7 +135,7 @@ describe("createAuthKit options", () => {
     const auth = createAuthKit({ users, jwt: jwtOptions(), password: FAST_ARGON2 });
     assert.ok(Object.isFrozen(auth));
     assert.ok(Object.isFrozen(auth.password));
-    assert.deepEqual(Object.keys(auth).sort(), ["login", "password", "verifyAccessToken"]);
+    assert.deepEqual(Object.keys(auth).sort(), ["login", "logout", "password", "refresh", "revokeAllSessions", "verifyAccessToken"]);
     assert.deepEqual(Object.keys(auth.password).sort(), ["hash", "verify"]);
   });
 });

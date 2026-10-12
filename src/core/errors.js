@@ -33,6 +33,8 @@ export const AUTH_ERROR_CODES = Object.freeze({
   CONTRACT_VIOLATION: "CONTRACT_VIOLATION",
   /** Le fournisseur de mots de passe ne peut pas lire un hash stocké. */
   INVALID_PASSWORD_HASH: "INVALID_PASSWORD_HASH",
+  /** Le jeton de rafraîchissement est inconnu, expiré, déjà utilisé ou révoqué. */
+  REFRESH_TOKEN_INVALID: "REFRESH_TOKEN_INVALID",
   /** Une dépendance injectée (repository, provider) a échoué de façon inattendue. */
   DEPENDENCY_FAILURE: "DEPENDENCY_FAILURE"
 });
@@ -49,7 +51,13 @@ export const AUTH_ERROR_CODES = Object.freeze({
 export const AUTH_FAILURE_REASONS = Object.freeze({
   USER_NOT_FOUND: "USER_NOT_FOUND",
   INVALID_PASSWORD: "INVALID_PASSWORD",
-  ACCOUNT_DISABLED: "ACCOUNT_DISABLED"
+  ACCOUNT_DISABLED: "ACCOUNT_DISABLED",
+  /** Jeton de rafraîchissement absent du stockage (jamais émis, ou révoqué). */
+  REFRESH_TOKEN_UNKNOWN: "REFRESH_TOKEN_UNKNOWN",
+  /** Jeton de rafraîchissement expiré. */
+  REFRESH_TOKEN_EXPIRED: "REFRESH_TOKEN_EXPIRED",
+  /** Jeton de rafraîchissement déjà utilisé : vol probable, toute la famille est révoquée. */
+  REFRESH_TOKEN_REUSED: "REFRESH_TOKEN_REUSED"
 });
 
 /**
@@ -136,6 +144,20 @@ export class TokenExpiredError extends AuthKitError {
    */
   constructor(options = {}) {
     super(AUTH_ERROR_CODES.TOKEN_EXPIRED, PUBLIC_MESSAGES.tokenExpired, options);
+  }
+}
+
+/**
+ * Jeton de rafraîchissement refusé. Le message public est toujours le même ;
+ * la cause précise est dans `reason` (non énumérable), pour les journaux.
+ */
+export class InvalidRefreshTokenError extends AuthKitError {
+  /**
+   * @param {string} [reason] Raison d’audit interne (voir {@link AUTH_FAILURE_REASONS}).
+   */
+  constructor(reason) {
+    super(AUTH_ERROR_CODES.REFRESH_TOKEN_INVALID, PUBLIC_MESSAGES.refreshTokenInvalid);
+    Object.defineProperty(this, "reason", { value: reason, enumerable: false });
   }
 }
 

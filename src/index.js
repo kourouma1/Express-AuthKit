@@ -11,10 +11,12 @@ export { createAuthKit } from "./factory/create-auth-kit.js";
 
 export { createArgon2PasswordProvider } from "./providers/argon2-password-provider.js";
 export { createJwtTokenProvider } from "./providers/jwt-token-provider.js";
+export { createInMemoryRefreshTokenStore } from "./providers/in-memory-refresh-token-store.js";
 
 export { assertUserRepository } from "./core/contracts/user-repository.js";
 export { assertPasswordProvider } from "./core/contracts/password-provider.js";
 export { assertTokenProvider } from "./core/contracts/token-provider.js";
+export { assertRefreshTokenStore } from "./core/contracts/refresh-token-store.js";
 
 export {
   AUTH_ERROR_CODES,
@@ -26,6 +28,7 @@ export {
   InvalidCredentialsError,
   InvalidInputError,
   InvalidPasswordHashError,
+  InvalidRefreshTokenError,
   InvalidTokenError,
   TokenExpiredError,
   TokenMissingError,
@@ -47,4 +50,9 @@ export {
  * @typedef {import("./core/contracts/authentication-service.js").LoginCredentials} LoginCredentials
  * @typedef {import("./core/contracts/authentication-service.js").LoginResult} LoginResult
  * @typedef {import("./core/contracts/auth-principal.js").AuthPrincipal} AuthPrincipal
+ * @typedef {import("./core/contracts/authentication-service.js").UserIdInput} UserIdInput
+ * @typedef {import("./config/refresh-token-options.js").RefreshTokenOptions} RefreshTokenOptions
+ * @typedef {import("./core/contracts/refresh-token-store.js").RefreshTokenStore} RefreshTokenStore
+ * @typedef {import("./core/contracts/refresh-token-store.js").RefreshTokenRecord} RefreshTokenRecord
+ * @typedef {import("./core/contracts/refresh-token-store.js").ConsumedRefreshToken} ConsumedRefreshToken
  */

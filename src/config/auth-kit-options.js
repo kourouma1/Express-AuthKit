@@ -19,10 +19,12 @@ import { assertKnownKeys, assertPlainObject } from "./assertions.js";
  * @property {import("../core/contracts/user-repository.js").UserRepository} users Dépôt d’utilisateurs de l’application.
  * @property {import("./jwt-options.js").JwtOptions} [jwt] Obligatoire sans `providers.token`.
  * @property {import("./password-options.js").PasswordOptions} [password] Paramètres de coût Argon2id.
+ * @property {import("./refresh-token-options.js").RefreshTokenOptions} [refreshTokens]
+ *   Active les jetons de rafraîchissement (désactivés par défaut).
  * @property {ProviderOverrides} [providers] Implémentations personnalisées des fournisseurs.
  */
 
-const ALLOWED_KEYS = Object.freeze(["users", "jwt", "password", "providers"]);
+const ALLOWED_KEYS = Object.freeze(["users", "jwt", "password", "refreshTokens", "providers"]);
 const ALLOWED_PROVIDER_KEYS = Object.freeze(["password", "token"]);
 
 /**

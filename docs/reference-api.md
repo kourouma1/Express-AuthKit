@@ -45,6 +45,7 @@ const auth = createAuthKit({
 | `users` | `UserRepository` | oui | L'objet qui lit vos utilisateurs. Voir [repository](repository-utilisateur.md). |
 | `jwt` | `JwtOptions` | oui, sauf si `providers.token` | Réglages des tokens. Voir [configuration JWT](configuration.md#configuration-jwt). |
 | `password` | `PasswordOptions` | non | Coûts Argon2id. Voir [configuration](configuration.md#configuration-argon2id). |
+| `refreshTokens` | `{ store, expiresInSeconds? }` | non | Active les refresh tokens. Voir [refresh tokens](refresh-tokens.md). |
 | `providers.password` | `PasswordProvider` | non | Remplace Argon2id. Incompatible avec `password`. |
 | `providers.token` | `TokenProvider` | non | Remplace le JWT HMAC. Incompatible avec `jwt`. |
 
@@ -78,7 +79,9 @@ Résultat (`LoginResult`) :
   accessToken: string,          // JWT signé
   tokenType: "Bearer",
   expiresIn: number,            // secondes
-  principal: AuthPrincipal
+  principal: AuthPrincipal,
+  refreshToken?: string,        // si refreshTokens est activé
+  refreshExpiresIn?: number     // secondes
 }
 ```
 
@@ -91,6 +94,41 @@ Résultat (`LoginResult`) :
 - `ContractViolationError` : le repository a renvoyé un utilisateur mal formé.
 - `DependencyFailureError` : votre repository ou un provider a planté (base indisponible…).
   L'erreur d'origine est dans `error.cause`.
+
+#### `auth.refresh(refreshToken)` → `Promise<LoginResult>`
+
+Échange un refresh token contre une nouvelle paire de jetons. L'ancien refresh token devient
+inutilisable (rotation). Nécessite l'option `refreshTokens`.
+
+```javascript
+const session = await auth.refresh(oldRefreshToken);
+// session.accessToken, session.refreshToken (le nouveau, à garder)
+```
+
+**Erreurs** :
+
+- `InvalidInputError` : `refreshToken` absent, vide, pas une chaîne ou trop long.
+- `InvalidRefreshTokenError` : jeton inconnu, expiré, déjà utilisé (toute la session est alors
+  révoquée), ou utilisateur désactivé ou supprimé. Message toujours identique ; la cause est
+  dans la propriété cachée `reason`.
+- `ConfigurationError` : l'option `refreshTokens` n'est pas activée.
+- `DependencyFailureError` : votre store ou votre repository a planté.
+
+#### `auth.logout(refreshToken)` → `Promise<void>`
+
+Ferme la session liée à ce refresh token. Réussit aussi si la session était déjà fermée.
+Nécessite l'option `refreshTokens`.
+
+**Erreurs** : `InvalidInputError`, `ConfigurationError`, `DependencyFailureError`.
+
+#### `auth.revokeAllSessions(userId)` → `Promise<void>`
+
+Ferme **toutes** les sessions d'un utilisateur (après un changement de mot de passe, par
+exemple). `userId` peut être un texte, un entier, un `BigInt` ou un `ObjectId`. Nécessite
+l'option `refreshTokens`.
+
+**Erreurs** : `InvalidInputError` (identifiant invalide), `ConfigurationError`,
+`DependencyFailureError`.
 
 #### `auth.verifyAccessToken(token)` → `Promise<AuthPrincipal>`
 
@@ -186,6 +224,17 @@ Crée le provider de tokens JWT signés en HMAC.
 - `issue()` : `InvalidInputError` si `subject` est vide ou dépasse 256 caractères.
 - `verify()` : `InvalidTokenError` ou `TokenExpiredError`.
 
+#### `createInMemoryRefreshTokenStore()` → `RefreshTokenStore`
+
+Crée un stockage de refresh tokens **en mémoire**, pour le développement et les tests.
+
+```javascript
+const auth = createAuthKit({ users, jwt, refreshTokens: { store: createInMemoryRefreshTokenStore() } });
+```
+
+> ⚠️ Les jetons sont perdus au redémarrage et ne sont pas partagés entre serveurs. En
+> production, écrivez votre propre store ([exemple PostgreSQL](refresh-tokens.md#stocker-les-jetons-dans-postgresql)).
+
 ### Vérification des contrats
 
 Un **contrat** est la liste des méthodes qu'un objet doit avoir. Ces fonctions vérifient
@@ -200,6 +249,7 @@ assertUserRepository(myRepository); // ne fait rien si tout va bien
 | `assertUserRepository(value)` | `findByIdentifier()`, `findById()` |
 | `assertPasswordProvider(value)` | `hash()`, `verify()` |
 | `assertTokenProvider(value)` | `issue()`, `verify()` |
+| `assertRefreshTokenStore(value)` | `save()`, `consume()`, `revokeFamily()`, `revokeUser()` |
 
 Elles vérifient seulement que les méthodes existent, pas qu'elles fonctionnent.
 
@@ -228,6 +278,7 @@ try {
 | `TokenMissingError` | `TOKEN_MISSING` | Aucun token fourni. |
 | `InvalidTokenError` | `TOKEN_INVALID` | Token refusé. Propriété cachée `reason` si l'utilisateur est supprimé ou désactivé. |
 | `TokenExpiredError` | `TOKEN_EXPIRED` | Token expiré. |
+| `InvalidRefreshTokenError` | `REFRESH_TOKEN_INVALID` | Refresh token refusé. Propriété cachée `reason` : `REFRESH_TOKEN_UNKNOWN`, `REFRESH_TOKEN_EXPIRED`, `REFRESH_TOKEN_REUSED`, `USER_NOT_FOUND` ou `ACCOUNT_DISABLED`. |
 | `ConfigurationError` | `INVALID_CONFIGURATION` | Configuration manquante ou non sûre, au démarrage. |
 | `ContractViolationError` | `CONTRACT_VIOLATION` | Un objet injecté ne respecte pas son contrat. |
 | `InvalidPasswordHashError` | `INVALID_PASSWORD_HASH` | Hash stocké illisible. |
@@ -312,6 +363,29 @@ app.post("/auth/login", express.json(), expressAuth.login({ identifierField: "em
 **Erreur** : `ConfigurationError` quand vous appelez `login()`, si `identifierField` n'est
 pas un nom de champ simple ou si une option est inconnue.
 
+#### `expressAuth.refresh()` → handler de rafraîchissement
+
+Lit `refreshToken` dans le corps JSON et répond avec une nouvelle paire de jetons.
+Nécessite l'option `refreshTokens` de `createAuthKit()`.
+
+```javascript
+app.post("/auth/refresh", express.json(), expressAuth.refresh());
+```
+
+- Succès : `200 { accessToken, tokenType, expiresIn, refreshToken, refreshExpiresIn }`, avec
+  `Cache-Control: no-store`.
+- Échec : 400 (`INVALID_INPUT`) ou 401 (`REFRESH_TOKEN_INVALID`), en JSON.
+- Autre erreur (option non activée, base indisponible…) : appelle `next(error)`.
+
+#### `expressAuth.logout()` → handler de déconnexion
+
+Lit `refreshToken` dans le corps JSON, ferme la session et répond **204** (sans contenu).
+Répond aussi 204 si la session était déjà fermée.
+
+```javascript
+app.post("/auth/logout", express.json(), expressAuth.logout());
+```
+
 #### `expressAuth.errorHandler()` → middleware d'erreur
 
 Convertit en réponse JSON les erreurs d'authentification levées dans **vos** routes (par
@@ -323,7 +397,7 @@ exemple si vous appelez `auth.login()` vous-même), ainsi que les erreurs du par
 | `INVALID_INPUT` | 400 |
 | JSON mal formé (parseur `express.json()`) | 400, code `INVALID_INPUT` |
 | Corps trop volumineux (parseur `express.json()`) | 413, code `INVALID_INPUT` |
-| `INVALID_CREDENTIALS`, `TOKEN_MISSING`, `TOKEN_INVALID`, `TOKEN_EXPIRED` | 401 |
+| `INVALID_CREDENTIALS`, `TOKEN_MISSING`, `TOKEN_INVALID`, `TOKEN_EXPIRED`, `REFRESH_TOKEN_INVALID` | 401 |
 
 Toute autre erreur est transmise avec `next(error)`. C'est aussi le cas si la réponse a déjà
 commencé à être envoyée.
@@ -354,9 +428,10 @@ logique sur `code`.
 
 ## Pour aller plus loin
 
-### Types JSDoc
+### Types JSDoc et TypeScript
 
-Les types sont disponibles pour l'autocomplétion dans vos fichiers JavaScript :
+Le package contient ses déclarations TypeScript : voir [TypeScript](typescript.md).
+Les types sont aussi disponibles pour l'autocomplétion dans vos fichiers JavaScript :
 
 ```javascript
 /** @type {import("express-authkit").UserRepository} */
@@ -369,4 +444,5 @@ function audit(principal) { /* … */ }
 Types exportés : `AuthKit`, `AuthKitOptions`, `JwtOptions`, `PasswordOptions`,
 `UserRepository`, `AuthUserRecord`, `PasswordProvider`, `TokenProvider`, `IssuedToken`,
 `VerifiedTokenClaims`, `AuthenticationService`, `LoginCredentials`, `LoginResult`,
-`AuthPrincipal`.
+`AuthPrincipal`, `UserIdInput`, `RefreshTokenOptions`, `RefreshTokenStore`,
+`RefreshTokenRecord`, `ConsumedRefreshToken`.

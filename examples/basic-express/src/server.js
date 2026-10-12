@@ -1,4 +1,4 @@
-import { createAuthKit } from "express-authkit";
+import { createAuthKit, createInMemoryRefreshTokenStore } from "express-authkit";
 
 import { createApp } from "./app.js";
 import { InMemoryUserRepository } from "./in-memory-user-repository.js";
@@ -18,7 +18,10 @@ async function main() {
       issuer: "express-authkit-example",
       audience: "express-authkit-example-client",
       expiresInSeconds: 900
-    }
+    },
+    // En mémoire pour la démonstration : en production, utilisez votre base
+    // de données (voir docs/refresh-tokens.md).
+    refreshTokens: { store: createInMemoryRefreshTokenStore() }
   });
 
   await seedDemoUser(auth, users);

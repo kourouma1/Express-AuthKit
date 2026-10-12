@@ -23,15 +23,20 @@ const auth = createAuthKit({
     memoryCost: 65536,
     timeCost: 3,
     parallelism: 4
+  },
+  refreshTokens: {                  // facultatif : rester connecté (voir refresh-tokens.md)
+    store: refreshTokenStore,
+    expiresInSeconds: 1209600       // facultatif, 14 jours par défaut
   }
 });
 ```
 
-Vous passez un seul objet à `createAuthKit()`. Il contient quatre clés possibles :
+Vous passez un seul objet à `createAuthKit()`. Il contient cinq clés possibles :
 
 - `users` : l'objet qui lit vos utilisateurs en base (voir [le repository utilisateur](repository-utilisateur.md)). Obligatoire.
 - `jwt` : les réglages des tokens de connexion. Obligatoire.
 - `password` : les réglages du hachage des mots de passe. Facultatif.
+- `refreshTokens` : active les [refresh tokens](refresh-tokens.md), pour garder l'utilisateur connecté. Facultatif.
 - `providers` : pour remplacer les briques par défaut ([providers personnalisés](providers-personnalises.md)). Rare.
 
 La configuration est **vérifiée dès le démarrage**. Une option manquante, inconnue ou

@@ -27,8 +27,20 @@ export function createApp({ auth, users, loginRateLimiters = createLoginRateLimi
     res.json({ status: "ok" });
   });
 
-  // Handler prêt à l'emploi : lit `identifier` et `password` dans le corps JSON.
+  // Handlers prêts à l'emploi : connexion, rafraîchissement et déconnexion.
   app.post("/auth/login", ...loginRateLimiters, expressAuth.login());
+  app.post("/auth/refresh", expressAuth.refresh());
+  app.post("/auth/logout", expressAuth.logout());
+
+  // Déconnexion de tous les appareils de l'utilisateur connecté.
+  app.post("/auth/logout-all", expressAuth.authenticate(), async (req, res, next) => {
+    try {
+      await auth.revokeAllSessions(req.auth.userId);
+      res.status(204).end();
+    } catch (error) {
+      next(error);
+    }
+  });
 
   app.get("/me", expressAuth.authenticate(), async (req, res, next) => {
     try {

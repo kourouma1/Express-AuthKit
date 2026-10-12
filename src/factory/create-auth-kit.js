@@ -1,5 +1,7 @@
 import { validateAuthKitOptions } from "../config/auth-kit-options.js";
+import { resolveRefreshTokenOptions } from "../config/refresh-token-options.js";
 import { createAuthenticationService } from "../core/authentication-service.js";
+import { createRefreshTokenService } from "../core/refresh-token-service.js";
 import { callDependency } from "../core/errors.js";
 import { assertPasswordProvider } from "../core/contracts/password-provider.js";
 import { assertTokenProvider } from "../core/contracts/token-provider.js";
@@ -21,6 +23,9 @@ import { createJwtTokenProvider } from "../providers/jwt-token-provider.js";
  *
  * @typedef {Readonly<{
  *   login: (credentials: import("../core/contracts/authentication-service.js").LoginCredentials) => Promise<import("../core/contracts/authentication-service.js").LoginResult>,
+ *   refresh: (refreshToken: string) => Promise<import("../core/contracts/authentication-service.js").LoginResult>,
+ *   logout: (refreshToken: string) => Promise<void>,
+ *   revokeAllSessions: (userId: import("../core/contracts/authentication-service.js").UserIdInput) => Promise<void>,
  *   verifyAccessToken: (token: string) => Promise<import("../core/contracts/auth-principal.js").AuthPrincipal>,
  *   password: PasswordApi
  * }>} AuthKit
@@ -46,23 +51,38 @@ import { createJwtTokenProvider } from "../providers/jwt-token-provider.js";
  * @throws {import("../core/errors.js").ContractViolationError} Si une dépendance injectée ne respecte pas son contrat.
  */
 export function createAuthKit(options) {
-  const { users, jwt, password, providers = {} } = validateAuthKitOptions(options);
+  const { users, jwt, password, refreshTokens, providers = {} } = validateAuthKitOptions(options);
 
   assertUserRepository(users);
 
   const passwordProvider = providers.password ?? createArgon2PasswordProvider(password);
   assertPasswordProvider(passwordProvider);
 
-  const tokenProvider = providers.token ?? createJwtTokenProvider(jwt);
+  // validateAuthKitOptions() garantit que `jwt` est présent quand aucun provider de token n’est fourni.
+  const tokenProvider =
+    providers.token ?? createJwtTokenProvider(/** @type {import("../config/jwt-options.js").JwtOptions} */ (jwt));
   assertTokenProvider(tokenProvider);
 
-  const service = createAuthenticationService({ users, passwordProvider, tokenProvider });
+  const refreshTokenService =
+    refreshTokens === undefined ? undefined : createRefreshTokenService(resolveRefreshTokenOptions(refreshTokens));
+
+  const service = createAuthenticationService({
+    users,
+    passwordProvider,
+    tokenProvider,
+    refreshTokens: refreshTokenService
+  });
 
   return Object.freeze({
     login: service.login,
+    refresh: service.refresh,
+    logout: service.logout,
+    revokeAllSessions: service.revokeAllSessions,
     verifyAccessToken: service.verifyAccessToken,
     password: Object.freeze({
+      /** @param {string} plainPassword */
       hash: (plainPassword) => callDependency("PasswordProvider.hash", () => passwordProvider.hash(plainPassword)),
+      /** @param {string} plainPassword @param {string} passwordHash */
       verify: (plainPassword, passwordHash) =>
         callDependency("PasswordProvider.verify", () => passwordProvider.verify(plainPassword, passwordHash))
     })

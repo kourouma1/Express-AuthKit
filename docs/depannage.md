@@ -179,8 +179,23 @@ Le `code` de l'erreur (`INVALID_CREDENTIALS`, `TOKEN_MISSING`…) est dans la r�
 ### `401 TOKEN_EXPIRED`
 
 - **Cause probable** : le token a dépassé sa durée de vie (`expiresInSeconds`).
-- **Solution** : le client doit se reconnecter. Les refresh tokens (renouvellement
-  automatique) ne sont pas disponibles en 0.1.0.
+- **Solution** : si les [refresh tokens](refresh-tokens.md) sont activés, le client appelle
+  `/auth/refresh` pour obtenir un nouveau token d'accès. Sinon, il doit se reconnecter.
+
+### `401 REFRESH_TOKEN_INVALID` sur `/auth/refresh`
+
+- **Causes probables** : le refresh token a expiré, a déjà été utilisé (le client n'a pas
+  remplacé l'ancien par le nouveau, ou deux rafraîchissements ont eu lieu en même temps), la
+  session a été fermée (`logout`, `revokeAllSessions`), ou le compte a été désactivé.
+- **Solution** : renvoyez l'utilisateur vers la connexion. Côté serveur, `error.reason` donne la
+  cause exacte (par exemple `REFRESH_TOKEN_REUSED`).
+
+### « Les jetons de rafraîchissement ne sont pas activés »
+
+- **Cause probable** : vous appelez `auth.refresh()`, `auth.logout()` ou
+  `auth.revokeAllSessions()` sans l'option `refreshTokens`.
+- **Solution** : ajoutez `refreshTokens: { store }` à `createAuthKit()`
+  (voir [refresh tokens](refresh-tokens.md)).
 
 ### `req.auth` vaut `undefined`
 

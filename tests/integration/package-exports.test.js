@@ -18,14 +18,17 @@ describe("package exports", () => {
       "InvalidCredentialsError",
       "InvalidInputError",
       "InvalidPasswordHashError",
+      "InvalidRefreshTokenError",
       "InvalidTokenError",
       "TokenExpiredError",
       "TokenMissingError",
       "assertPasswordProvider",
+      "assertRefreshTokenStore",
       "assertTokenProvider",
       "assertUserRepository",
       "createArgon2PasswordProvider",
       "createAuthKit",
+      "createInMemoryRefreshTokenStore",
       "createJwtTokenProvider",
       "isAuthKitError"
     ]);

@@ -155,8 +155,8 @@ Express AuthKit réduit ce problème : à chaque requête, il relit l'utilisateu
 | --- | --- | --- |
 | Compte désactivé (`isActive: false`) | **Oui** | `findById()` est appelé à chaque requête. |
 | Compte supprimé | **Oui** | `findById()` renvoie `null`. |
-| Changement de mot de passe | **Non** | Les anciens tokens restent valides jusqu'à expiration. |
-| Déconnexion (« logout ») | **Non** | Le client efface son token, mais ce token reste valide jusqu'à expiration. |
+| Changement de mot de passe | **Non** pour le token d'accès (15 min au plus) | Appelez `auth.revokeAllSessions(userId)` : les refresh tokens sont révoqués tout de suite. |
+| Déconnexion (« logout ») | **Non** pour le token d'accès (15 min au plus) | Avec les [refresh tokens](refresh-tokens.md), `auth.logout()` révoque la session : plus aucun nouveau token. |
 | Token volé | **Non** | Il reste valide jusqu'à expiration, sauf si vous désactivez le compte. |
 | Fuite du secret | **Oui, pour tous** | Changez `AUTH_SECRET` : tous les tokens deviennent invalides. |
 
@@ -166,9 +166,11 @@ Ce que nous recommandons :
 - Pour couper l'accès d'un utilisateur, **désactivez temporairement son compte**.
 - Vous pouvez aussi ajouter une règle dans votre repository. Par exemple, renvoyer
   `isActive: false` tant qu'un drapeau de sécurité est levé sur le compte.
-- Une liste de révocation par `jti` (l'identifiant unique de chaque token) et les refresh
-  tokens ne sont **pas disponibles** en 0.1.0. Ce sont des
-  [points d'extension futurs](architecture.md#points-dextension-futurs).
+- Activez les [refresh tokens](refresh-tokens.md) : le token d'accès peut rester court
+  (15 minutes) sans que l'utilisateur doive se reconnecter, et la déconnexion devient réelle.
+- Une liste de révocation par `jti` (l'identifiant unique de chaque token d'accès) n'est
+  **pas disponible** en 0.1.0. C'est un
+  [point d'extension futur](architecture.md#points-dextension-futurs).
 
 ### Rotation du secret
 

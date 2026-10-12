@@ -28,7 +28,9 @@ npm run check        # lint + tests
 
 ## Règles du projet
 
-- JavaScript ES2022+ uniquement, modules ES natifs, **pas de TypeScript**.
+- JavaScript ES2022+ uniquement, modules ES natifs, **pas de fichier TypeScript écrit à la main**.
+  Les déclarations `types/*.d.ts` sont générées depuis le JSDoc (`npm run build:types`) et ne
+  sont pas versionnées.
 - Les contrats et API publiques sont documentés en JSDoc.
 - `src/core/` ne doit importer ni Express, ni une base de données, ni un provider
   (un test d'architecture le vérifie).

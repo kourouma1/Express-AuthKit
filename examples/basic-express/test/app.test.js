@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { after, before, describe, it } from "node:test";
 
-import { createAuthKit } from "express-authkit";
+import { createAuthKit, createInMemoryRefreshTokenStore } from "express-authkit";
 
 import { createApp } from "../src/app.js";
 import { InMemoryUserRepository } from "../src/in-memory-user-repository.js";
@@ -21,7 +21,8 @@ describe("example application", () => {
     const auth = createAuthKit({
       users,
       jwt: { secret: randomBytes(48).toString("base64url"), issuer: "example", audience: "example-client" },
-      password: { memoryCost: 19_456, timeCost: 2, parallelism: 1 }
+      password: { memoryCost: 19_456, timeCost: 2, parallelism: 1 },
+      refreshTokens: { store: createInMemoryRefreshTokenStore() }
     });
     demoUser = users.create({ email: "Alice@Example.test", name: "Alice", passwordHash: await auth.password.hash(PASSWORD) });
 
@@ -52,6 +53,30 @@ describe("example application", () => {
     const body = await me.json();
     assert.deepEqual(body, { userId: demoUser.id, profile: demoUser });
     assert.equal(JSON.stringify(body).includes("argon2"), false);
+  });
+
+  it("refreshes the session, then logs out", async () => {
+    const first = await (await login("alice@example.test", PASSWORD)).json();
+    assert.equal(typeof first.refreshToken, "string");
+
+    const post = (path, body, headers = {}) =>
+      fetch(`${baseUrl}${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...headers },
+        body: JSON.stringify(body)
+      });
+
+    const refreshed = await post("/auth/refresh", { refreshToken: first.refreshToken });
+    assert.equal(refreshed.status, 200);
+    const second = await refreshed.json();
+
+    assert.equal((await post("/auth/logout", { refreshToken: second.refreshToken })).status, 204);
+    assert.equal((await post("/auth/refresh", { refreshToken: second.refreshToken })).status, 401);
+
+    const other = await (await login("alice@example.test", PASSWORD)).json();
+    const logoutAll = await post("/auth/logout-all", {}, { authorization: `Bearer ${other.accessToken}` });
+    assert.equal(logoutAll.status, 204);
+    assert.equal((await post("/auth/refresh", { refreshToken: other.refreshToken })).status, 401);
   });
 
   it("protects /me", async () => {

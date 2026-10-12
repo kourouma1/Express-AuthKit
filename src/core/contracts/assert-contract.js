@@ -18,7 +18,8 @@ export function assertImplements(candidate, contractName, methodNames) {
     throw new ContractViolationError(contractNotObject(contractName));
   }
 
-  const missing = methodNames.filter((name) => typeof candidate[name] !== "function");
+  const members = /** @type {Record<string, unknown>} */ (candidate);
+  const missing = methodNames.filter((name) => typeof members[name] !== "function");
   if (missing.length > 0) {
     throw new ContractViolationError(contractMissingMethods(contractName, missing));
   }

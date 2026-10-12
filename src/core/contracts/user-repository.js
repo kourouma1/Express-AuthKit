@@ -52,7 +52,7 @@ export function assertUserRepository(repository) {
  * connexion, ce qui masquerait le problème.
  *
  * @param {unknown} record
- * @returns {AuthUserRecord | null}
+ * @returns {{ id: string, passwordHash: string, isActive: boolean } | null} Enregistrement avec un `id` toujours en texte.
  * @throws {ContractViolationError}
  */
 export function normalizeUserRecord(record) {
@@ -81,18 +81,33 @@ export function normalizeUserRecord(record) {
  * La conversion est sans perte, ce qui évite aux applications de l’écrire.
  *
  * @param {unknown} id
- * @returns {string}
- * @throws {ContractViolationError}
+ * @returns {string | null} L’identifiant en texte, ou `null` si sa forme n’est pas prise en charge.
  */
-function normalizeUserId(id) {
+export function toUserIdString(id) {
   if (typeof id === "string" && id.length > 0) {
     return id;
   }
   if ((typeof id === "number" && Number.isSafeInteger(id)) || typeof id === "bigint") {
     return String(id);
   }
-  if (id !== null && typeof id === "object" && typeof id.toHexString === "function") {
-    return id.toHexString();
+  if (id !== null && typeof id === "object") {
+    const { toHexString } = /** @type {{ toHexString?: unknown }} */ (id);
+    if (typeof toHexString === "function") {
+      return String(toHexString.call(id));
+    }
   }
-  throw new ContractViolationError(DEVELOPER_MESSAGES.repositoryRecordId);
+  return null;
+}
+
+/**
+ * @param {unknown} id
+ * @returns {string}
+ * @throws {ContractViolationError}
+ */
+function normalizeUserId(id) {
+  const normalized = toUserIdString(id);
+  if (normalized === null) {
+    throw new ContractViolationError(DEVELOPER_MESSAGES.repositoryRecordId);
+  }
+  return normalized;
 }

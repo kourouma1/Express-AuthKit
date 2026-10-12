@@ -140,7 +140,6 @@ pourraient s'ajouter sans tout réécrire.
 
 | Fonctionnalité | Où elle s'intégrerait |
 | --- | --- |
-| Refresh tokens (tokens longs qui servent à obtenir un nouveau token d'accès) | Nouveau contrat `RefreshTokenStore` (stockage + rotation) et nouveau cas d'usage `refresh()` dans le Core. Le `jti` déjà présent servirait d'identifiant. |
 | Liste de révocation (tokens bloqués avant leur expiration) | Contrat facultatif interrogé par `verifyAccessToken()` avec le `tokenId`. |
 | RBAC / permissions (droits selon le rôle de l'utilisateur) | Ajout contrôlé d'informations au principal depuis le repository, puis middleware `authorize()` dans l'adaptateur. |
 | Audit | Hook facultatif qui recevrait les événements (`login.succeeded`, `login.failed` avec `error.reason`). |
@@ -156,7 +155,8 @@ pourraient s'ajouter sans tout réécrire.
 
 | Décision | Pourquoi |
 | --- | --- |
-| **JavaScript + JSDoc, sans TypeScript** | Exigence du projet. Pas d'étape de build : le code publié est le code source. |
+| **JavaScript + JSDoc, sans TypeScript** | Exigence du projet. Pas d'étape de build pour le code : le code publié est le code source. Les déclarations de types (`types/*.d.ts`) sont **générées** depuis le JSDoc avant la publication, jamais écrites à la main. |
+| **Refresh tokens opaques, stockés hachés** | Un jeton aléatoire (pas un JWT) peut être révoqué à tout moment. Seule son empreinte SHA-256 est stockée. Rotation à chaque usage et révocation de la famille en cas de réutilisation (OAuth 2.0 Security BCP). |
 | **Node.js ≥ 22.12, 24 LTS recommandé** | Versions LTS maintenues en 2026. Elles fournissent `fetch`, `crypto.randomUUID`, `--env-file` et un test runner stable. Node 20 n'est plus maintenu depuis avril 2026. |
 | **`jose`** pour les JWT | Sans dépendance, maintenue, conforme aux RFC. API stricte : liste d'algorithmes, `typ`, champs obligatoires. |
 | **`argon2`** pour les mots de passe | Implémentation de référence, binaires précompilés, comparaison en temps constant. Le `crypto.argon2` natif de Node 24.7+ est encore expérimental. |

@@ -51,5 +51,15 @@ sous la rubrique **Incompatible**. L'API publique se limite aux exports de
 - Oublier les parenthèses (`expressAuth.authenticate` au lieu de `expressAuth.authenticate()`)
   lève une `ConfigurationError` explicite au lieu de bloquer la requête.
 - `expressAuth.login({ identifierField })` cite le vrai nom du champ dans ses messages.
+- **Refresh tokens** (option `refreshTokens: { store, expiresInSeconds }`, désactivée par défaut) :
+  `auth.refresh()`, `auth.logout()`, `auth.revokeAllSessions()`, handlers Express
+  `expressAuth.refresh()` et `expressAuth.logout()`. Jetons opaques de 256 bits, stockés sous forme
+  d'empreinte SHA-256, rotation à chaque usage, révocation de toute la session en cas de
+  réutilisation. Contrat `RefreshTokenStore` (`save`, `consume`, `revokeFamily`, `revokeUser`),
+  `createInMemoryRefreshTokenStore()` pour le développement, exemple PostgreSQL documenté.
+- Nouvelle erreur `InvalidRefreshTokenError` (`REFRESH_TOKEN_INVALID`, 401).
+- **Types TypeScript** générés depuis le JSDoc (`types/*.d.ts`, champ `types` et conditions
+  `types` dans `exports`), avec `req.auth` typé pour Express. Script `npm run typecheck` :
+  le code source passe la vérification TypeScript en mode strict.
 - `TokenProvider.issue()` est vérifié : un provider personnalisé qui renvoie un jeton mal formé
   lève une `ContractViolationError`.

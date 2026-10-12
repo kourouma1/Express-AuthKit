@@ -159,6 +159,8 @@ Une application plus complète, avec ses tests, se trouve dans [examples/basic-e
 | Protéger une route | `app.get("/me", expressAuth.authenticate(), handler)` puis `req.auth.userId` |
 | Hacher un mot de passe (inscription) | `await auth.password.hash(password)` |
 | Vérifier un mot de passe | `await auth.password.verify(password, hash)` |
+| Rester connecté plus de 15 minutes | `refreshTokens: { store }` puis `app.post("/auth/refresh", express.json(), expressAuth.refresh())` |
+| Déconnecter | `app.post("/auth/logout", express.json(), expressAuth.logout())` |
 | Générer un secret | `npx express-authkit secret` |
 
 **Votre repository** : deux fonctions, `findByIdentifier()` et `findById()`. Elles renvoient
@@ -180,6 +182,8 @@ La liste complète se trouve dans le [guide de sécurité](docs/securite.md).
 - [Brancher ma base de données](docs/repository-utilisateur.md) (PostgreSQL, Prisma, MongoDB…)
 - [Connecter les utilisateurs et protéger les routes](docs/connexion-et-routes.md)
 - [Gérer les mots de passe](docs/mots-de-passe.md) (inscription, changement de mot de passe)
+- [Rester connecté : les refresh tokens](docs/refresh-tokens.md) (et la déconnexion)
+- [Utiliser TypeScript](docs/typescript.md) (autocomplétion, `req.auth` typé)
 - [Régler la configuration](docs/configuration.md)
 
 **Quand quelque chose ne va pas**
@@ -199,7 +203,8 @@ La liste complète se trouve dans le [guide de sécurité](docs/securite.md).
 ## Ce que la version 0.1.0 ne fait pas (encore)
 
 Pas de connexion via Google/GitHub (OAuth), pas de double authentification (MFA), pas de
-rôles ni de permissions, pas de refresh tokens, pas de sessions ni de cookies.
+rôles ni de permissions, pas de cookies `HttpOnly`, pas de réinitialisation de mot de passe
+par e-mail.
 Ces sujets sont [prévus pour plus tard](docs/architecture.md#points-dextension-futurs).
 
 ## Licence

@@ -1,0 +1,18 @@
+{
+  "//": "Génère les déclarations TypeScript (types/*.d.ts) à partir du JSDoc de src/. Aucun fichier .ts n'est écrit à la main.",
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "outDir": "types",
+    "rootDir": "src",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "target": "es2022",
+    "strict": true,
+    "skipLibCheck": true,
+    "types": ["node"]
+  },
+  "include": ["src/**/*.js"]
+}

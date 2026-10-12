@@ -23,11 +23,14 @@ export const PUBLIC_MESSAGES = Object.freeze({
   tokenMissing: "Authentification requise.",
   tokenInvalid: "Jeton d’accès invalide.",
   tokenExpired: "Jeton d’accès expiré.",
+  refreshTokenInvalid: "Jeton de rafraîchissement invalide ou expiré. Reconnectez-vous.",
   credentialsNotObject: "Les identifiants doivent être un objet contenant « identifier » et « password ».",
   missingJsonBody:
     "Le corps de la requête doit être un objet JSON : envoyez l’en-tête « Content-Type: application/json ».",
   malformedJsonBody: "Le corps de la requête n’est pas un JSON valide.",
-  payloadTooLarge: "Le corps de la requête est trop volumineux."
+  payloadTooLarge: "Le corps de la requête est trop volumineux.",
+  refreshTokenMalformed: "Le champ « refreshToken » est obligatoire et doit être un texte non vide.",
+  userIdInvalid: "L’identifiant d’utilisateur doit être un texte non vide, un entier ou un ObjectId MongoDB."
 });
 
 /**
@@ -93,6 +96,15 @@ export const DEVELOPER_MESSAGES = Object.freeze({
     "UserRepository.findById() a renvoyé un utilisateur dont l’« id » diffère de celui demandé.",
   tokenClaimsWithoutSubject:
     "TokenProvider.verify() doit renvoyer des informations contenant un « subject » non vide.",
+  refreshStoreConsumeInvalid:
+    "RefreshTokenStore.consume() doit renvoyer null, ou { userId, familyId, expiresAt, alreadyUsed } : " +
+    "userId et familyId sont des textes, expiresAt un nombre de secondes, alreadyUsed un booléen.",
+  refreshStoreRequired:
+    "L’option « refreshTokens.store » est obligatoire : passez votre stockage (save, consume, revokeFamily, " +
+    "revokeUser), ou createInMemoryRefreshTokenStore() pour le développement.",
+  refreshTokensDisabled:
+    "Les jetons de rafraîchissement ne sont pas activés. Ajoutez l’option « refreshTokens: { store } » " +
+    "à createAuthKit() (voir docs/refresh-tokens.md).",
   issuedTokenInvalid:
     "TokenProvider.issue() doit renvoyer { token, tokenId, issuedAt, expiresAt } : " +
     "token et tokenId sont des textes, issuedAt et expiresAt des nombres de secondes."

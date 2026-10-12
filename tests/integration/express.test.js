@@ -5,8 +5,22 @@ import express from "express";
 import { SignJWT } from "jose";
 
 import { createExpressAuth } from "../../src/adapters/express/index.js";
-import { ConfigurationError, ContractViolationError } from "../../src/index.js";
-import { TEST_AUDIENCE, TEST_ISSUER, TEST_PASSWORD, TEST_SECRET, createTestAuthKit } from "../helpers/fixtures.js";
+import {
+  ConfigurationError,
+  ContractViolationError,
+  createAuthKit,
+  createInMemoryRefreshTokenStore
+} from "../../src/index.js";
+import {
+  FAST_ARGON2,
+  TEST_AUDIENCE,
+  TEST_ISSUER,
+  TEST_PASSWORD,
+  TEST_SECRET,
+  createInMemoryUserRepository,
+  createTestAuthKit,
+  jwtOptions
+} from "../helpers/fixtures.js";
 import { startServer } from "../helpers/http.js";
 
 /**
@@ -343,5 +357,89 @@ describe("Express error handling", () => {
     assert.throws(() => expressAuth.authenticate(fakeReq, fakeRes, next), ConfigurationError);
     assert.throws(() => expressAuth.login(fakeReq, fakeRes, next), ConfigurationError);
     assert.throws(() => expressAuth.errorHandler(new Error("x"), fakeReq, fakeRes, next), ConfigurationError);
+    assert.throws(() => expressAuth.refresh(fakeReq, fakeRes, next), ConfigurationError);
+    assert.throws(() => expressAuth.logout(fakeReq, fakeRes, next), ConfigurationError);
+  });
+});
+
+describe("expressAuth.refresh() and expressAuth.logout()", () => {
+  let server;
+
+  before(async () => {
+    const users = createInMemoryUserRepository();
+    const auth = createAuthKit({
+      users,
+      jwt: jwtOptions(),
+      password: FAST_ARGON2,
+      refreshTokens: { store: createInMemoryRefreshTokenStore() }
+    });
+    users.users.set("user-1", {
+      id: "user-1",
+      email: "alice@example.test",
+      passwordHash: await auth.password.hash(TEST_PASSWORD),
+      isActive: true
+    });
+    const expressAuth = createExpressAuth(auth);
+    const app = express();
+    app.use(express.json());
+    app.post("/login", expressAuth.login({ identifierField: "email" }));
+    app.post("/refresh", expressAuth.refresh());
+    app.post("/logout", expressAuth.logout());
+    app.get("/profile", expressAuth.authenticate(), (req, res) => res.json({ userId: req.auth.userId }));
+    server = await startServer(app);
+  });
+
+  after(() => server.close());
+
+  const post = (path, body) => server.request(path, { method: "POST", body });
+
+  it("runs the full session cycle: login → refresh → logout", async () => {
+    const login = await post("/login", { email: "alice@example.test", password: TEST_PASSWORD });
+    assert.equal(login.status, 200);
+    assert.deepEqual(Object.keys(login.body).sort(), [
+      "accessToken",
+      "expiresIn",
+      "refreshExpiresIn",
+      "refreshToken",
+      "tokenType"
+    ]);
+
+    const refreshed = await post("/refresh", { refreshToken: login.body.refreshToken });
+    assert.equal(refreshed.status, 200);
+    assert.equal(refreshed.headers.get("cache-control"), "no-store");
+    assert.notEqual(refreshed.body.refreshToken, login.body.refreshToken);
+    const profile = await server.request("/profile", {
+      headers: { authorization: `Bearer ${refreshed.body.accessToken}` }
+    });
+    assert.deepEqual(profile.body, { userId: "user-1" });
+
+    const logout = await post("/logout", { refreshToken: refreshed.body.refreshToken });
+    assert.equal(logout.status, 204);
+    const afterLogout = await post("/refresh", { refreshToken: refreshed.body.refreshToken });
+    assert.equal(afterLogout.status, 401);
+  });
+
+  it("answers 401 REFRESH_TOKEN_INVALID without revealing the reason", async () => {
+    const login = await post("/login", { email: "alice@example.test", password: TEST_PASSWORD });
+    await post("/refresh", { refreshToken: login.body.refreshToken });
+    const replay = await post("/refresh", { refreshToken: login.body.refreshToken });
+    assert.equal(replay.status, 401);
+    assert.deepEqual(replay.body, {
+      error: { code: "REFRESH_TOKEN_INVALID", message: "Jeton de rafraîchissement invalide ou expiré. Reconnectez-vous." }
+    });
+  });
+
+  it("answers 400 when refreshToken is missing", async () => {
+    for (const path of ["/refresh", "/logout"]) {
+      const response = await post(path, {});
+      assert.equal(response.status, 400, path);
+      assert.equal(response.body.error.code, "INVALID_INPUT");
+    }
+  });
+
+  it("logout twice still answers 204", async () => {
+    const login = await post("/login", { email: "alice@example.test", password: TEST_PASSWORD });
+    assert.equal((await post("/logout", { refreshToken: login.body.refreshToken })).status, 204);
+    assert.equal((await post("/logout", { refreshToken: login.body.refreshToken })).status, 204);
   });
 });

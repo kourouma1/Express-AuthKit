@@ -74,7 +74,7 @@ export function assertNonEmptyString(value, name, maxLength) {
  * @returns {asserts value is number}
  */
 export function assertIntegerInRange(value, name, min, max) {
-  if (!Number.isInteger(value) || value < min || value > max) {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < min || value > max) {
     throw new ConfigurationError(optionIntegerRange(name, min, max));
   }
 }

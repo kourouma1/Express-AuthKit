@@ -1,10 +1,12 @@
 import { createAuthPrincipal } from "./contracts/auth-principal.js";
-import { normalizeUserRecord } from "./contracts/user-repository.js";
+import { normalizeUserRecord, toUserIdString } from "./contracts/user-repository.js";
 import {
   AUTH_FAILURE_REASONS,
+  ConfigurationError,
   ContractViolationError,
   InvalidCredentialsError,
   InvalidInputError,
+  InvalidRefreshTokenError,
   InvalidTokenError,
   TokenMissingError,
   callDependency
@@ -33,20 +35,27 @@ import { DEVELOPER_MESSAGES, PUBLIC_MESSAGES, fieldRequired, fieldTooLong } from
  * @param {UserRepository} dependencies.users
  * @param {PasswordProvider} dependencies.passwordProvider
  * @param {TokenProvider} dependencies.tokenProvider
+ * @param {ReturnType<typeof import("./refresh-token-service.js").createRefreshTokenService>} [dependencies.refreshTokens]
+ *   Service des jetons de rafraîchissement ; absent si la fonctionnalité n’est pas activée.
  * @returns {AuthenticationService}
  */
-export function createAuthenticationService({ users, passwordProvider, tokenProvider }) {
+export function createAuthenticationService({ users, passwordProvider, tokenProvider, refreshTokens }) {
   const getDummyHash = createDummyHashSource(passwordProvider);
 
   // Chaque appel à une dépendance injectée est enveloppé : une panne (base de
   // données indisponible, bug d’un provider) devient une DependencyFailureError
   // avec un code stable, l’erreur d’origine restant disponible dans `cause`.
+  /** @param {string} identifier */
   const findUserByIdentifier = (identifier) =>
     callDependency("UserRepository.findByIdentifier", () => users.findByIdentifier(identifier));
+  /** @param {string} id */
   const findUserById = (id) => callDependency("UserRepository.findById", () => users.findById(id));
+  /** @param {string} password @param {string} hash */
   const verifyPassword = (password, hash) =>
     callDependency("PasswordProvider.verify", () => passwordProvider.verify(password, hash));
+  /** @param {string} subject */
   const issueToken = (subject) => callDependency("TokenProvider.issue", () => tokenProvider.issue({ subject }));
+  /** @param {string} token */
   const verifyToken = (token) => callDependency("TokenProvider.verify", () => tokenProvider.verify(token));
 
   /**
@@ -75,13 +84,87 @@ export function createAuthenticationService({ users, passwordProvider, tokenProv
       throw new InvalidCredentialsError(AUTH_FAILURE_REASONS.ACCOUNT_DISABLED);
     }
 
-    const issued = assertIssuedToken(await issueToken(user.id));
-    return {
+    return createSession(user.id);
+  }
+
+  /**
+   * Échange un jeton de rafraîchissement contre une nouvelle paire de jetons.
+   * L’ancien jeton devient inutilisable (rotation).
+   *
+   * @param {string} refreshToken
+   * @returns {Promise<LoginResult>}
+   */
+  async function refresh(refreshToken) {
+    const service = requireRefreshTokens();
+    const consumed = await service.consume(refreshToken);
+
+    // Le compte a pu être supprimé ou désactivé depuis la connexion.
+    const user = normalizeUserRecord(await findUserById(consumed.userId));
+    if (user === null || user.id !== consumed.userId || user.isActive !== true) {
+      await service.revokeFamily(consumed.familyId);
+      throw new InvalidRefreshTokenError(
+        user === null ? AUTH_FAILURE_REASONS.USER_NOT_FOUND : AUTH_FAILURE_REASONS.ACCOUNT_DISABLED
+      );
+    }
+
+    return createSession(user.id, consumed.familyId);
+  }
+
+  /**
+   * Déconnecte la session liée à ce jeton de rafraîchissement. Réussit même si
+   * le jeton est déjà révoqué ou expiré.
+   *
+   * @param {string} refreshToken
+   * @returns {Promise<void>}
+   */
+  async function logout(refreshToken) {
+    await requireRefreshTokens().revokeSessionOf(refreshToken);
+  }
+
+  /**
+   * Déconnecte toutes les sessions d’un utilisateur (par exemple après un
+   * changement de mot de passe).
+   *
+   * @param {string | number | bigint | { toHexString(): string }} userId
+   * @returns {Promise<void>}
+   */
+  async function revokeAllSessions(userId) {
+    const service = requireRefreshTokens();
+    const id = toUserIdString(userId);
+    if (id === null) {
+      throw new InvalidInputError(PUBLIC_MESSAGES.userIdInvalid);
+    }
+    await service.revokeUser(id);
+  }
+
+  /**
+   * Émet un jeton d’accès et, si la fonctionnalité est activée, un jeton de
+   * rafraîchissement (dans la famille donnée, ou une nouvelle).
+   *
+   * @param {string} userId
+   * @param {string} [familyId]
+   * @returns {Promise<LoginResult>}
+   */
+  async function createSession(userId, familyId) {
+    const issued = assertIssuedToken(await issueToken(userId));
+    const result = {
       accessToken: issued.token,
-      tokenType: "Bearer",
+      tokenType: /** @type {const} */ ("Bearer"),
       expiresIn: issued.expiresAt - issued.issuedAt,
-      principal: createAuthPrincipal(issued, user.id)
+      principal: createAuthPrincipal(issued, userId)
     };
+    if (refreshTokens === undefined) {
+      return result;
+    }
+    const refreshed = await refreshTokens.issue(userId, familyId);
+    return { ...result, refreshToken: refreshed.token, refreshExpiresIn: refreshed.expiresIn };
+  }
+
+  function requireRefreshTokens() {
+    if (refreshTokens === undefined) {
+      throw new ConfigurationError(DEVELOPER_MESSAGES.refreshTokensDisabled);
+    }
+    return refreshTokens;
   }
 
   /**
@@ -117,18 +200,19 @@ export function createAuthenticationService({ users, passwordProvider, tokenProv
     return createAuthPrincipal(claims, user.id);
   }
 
-  return Object.freeze({ login, verifyAccessToken });
+  return Object.freeze({ login, refresh, logout, revokeAllSessions, verifyAccessToken });
 }
 
 /**
  * Vérifie la forme du jeton renvoyé par un TokenProvider (utile surtout pour
  * les providers personnalisés).
  *
- * @param {unknown} issued
+ * @param {unknown} value
  * @returns {import("./contracts/token-provider.js").IssuedToken}
  * @throws {ContractViolationError}
  */
-function assertIssuedToken(issued) {
+function assertIssuedToken(value) {
+  const issued = /** @type {Partial<import("./contracts/token-provider.js").IssuedToken> | null | undefined} */ (value);
   const isValid =
     typeof issued?.token === "string" &&
     issued.token.length > 0 &&
@@ -138,7 +222,7 @@ function assertIssuedToken(issued) {
   if (!isValid) {
     throw new ContractViolationError(DEVELOPER_MESSAGES.issuedTokenInvalid);
   }
-  return issued;
+  return /** @type {import("./contracts/token-provider.js").IssuedToken} */ (issued);
 }
 
 /**

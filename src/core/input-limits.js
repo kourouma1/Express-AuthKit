@@ -15,3 +15,6 @@ export const MAX_PASSWORD_LENGTH = 1024;
 
 /** Les jetons d’accès produits par cette bibliothèque font quelques centaines de caractères. */
 export const MAX_TOKEN_LENGTH = 8192;
+
+/** Les jetons de rafraîchissement émis font 43 caractères ; la marge couvre d’autres formats. */
+export const MAX_REFRESH_TOKEN_LENGTH = 512;

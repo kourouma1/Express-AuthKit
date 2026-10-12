@@ -11,7 +11,7 @@ base de données. Il doit avoir deux méthodes :
 
 ```javascript
 /**
- * @type {import("express-authkit").UserRepository}
+ * @type {import("@kourouma/express-authkit").UserRepository}
  */
 const userRepository = {
   // Appelée par auth.login() avec l'identifiant saisi (e-mail, nom d'utilisateur…).
@@ -144,7 +144,7 @@ const AUTH_COLUMNS = 'id::text AS "id", password_hash AS "passwordHash", is_acti
 
 /**
  * @param {pg.Pool} pool
- * @returns {import("express-authkit").UserRepository}
+ * @returns {import("@kourouma/express-authkit").UserRepository}
  */
 export function createPgUserRepository(pool) {
   return {
@@ -201,7 +201,7 @@ const AUTH_FIELDS = { id: true, passwordHash: true, isActive: true };
 
 /**
  * @param {import("@prisma/client").PrismaClient} prisma
- * @returns {import("express-authkit").UserRepository}
+ * @returns {import("@kourouma/express-authkit").UserRepository}
  */
 export function createPrismaUserRepository(prisma) {
   return {
@@ -241,7 +241,7 @@ function toAuthRecord(doc) {
   return doc ? { id: doc._id, passwordHash: doc.passwordHash, isActive: doc.isActive } : null;
 }
 
-/** @returns {import("express-authkit").UserRepository} */
+/** @returns {import("@kourouma/express-authkit").UserRepository} */
 export function createMongooseUserRepository() {
   return {
     async findByIdentifier(identifier) {
@@ -271,7 +271,7 @@ Vous pouvez vérifier le contrat sans démarrer l'application :
 ```javascript
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { assertUserRepository } from "express-authkit";
+import { assertUserRepository } from "@kourouma/express-authkit";
 
 import { createPgUserRepository } from "./user-repository.pg.js";
 
@@ -304,7 +304,7 @@ supprimé ou passé à `isActive: false`. Gardez donc cette requête rapide (ind
 Vos utilisateurs sont gérés par un autre service ? Le repository peut l'interroger en HTTP :
 
 ```javascript
-/** @returns {import("express-authkit").UserRepository} */
+/** @returns {import("@kourouma/express-authkit").UserRepository} */
 export function createHttpUserRepository(baseUrl, serviceToken) {
   async function fetchUser(path) {
     const response = await fetch(new URL(path, baseUrl), {

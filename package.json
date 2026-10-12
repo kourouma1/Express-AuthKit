@@ -1,5 +1,5 @@
 {
-  "name": "express-authkit",
+  "name": "@kourouma/express-authkit",
   "version": "0.1.0-rc.1",
   "description": "Moteur d'authentification sécurisé et extensible pour Express.js : Argon2id, JWT (jose), repository utilisateur injectable.",
   "keywords": [
@@ -88,5 +88,8 @@
     "globals": "^17.13.0",
     "typescript": "^7.0.2"
   },
-  "types": "./types/index.d.ts"
+  "types": "./types/index.d.ts",
+  "publishConfig": {
+    "access": "public"
+  }
 }

@@ -10,8 +10,8 @@ La bibliothèque expose **deux** modules. Tout le reste est interne : le champ `
 `package.json` empêche de l'importer.
 
 ```javascript
-import { createAuthKit /* , … */ } from "express-authkit";      // le moteur, sans Express
-import { createExpressAuth } from "express-authkit/express";      // les middlewares Express
+import { createAuthKit /* , … */ } from "@kourouma/express-authkit";      // le moteur, sans Express
+import { createExpressAuth } from "@kourouma/express-authkit/express";      // les middlewares Express
 ```
 
 Sommaire :
@@ -27,7 +27,7 @@ Sommaire :
 
 ---
 
-## Module `express-authkit`
+## Module `@kourouma/express-authkit`
 
 ### `createAuthKit(options)` → `AuthKit`
 
@@ -317,7 +317,7 @@ Détails : [gestion des erreurs](erreurs.md).
 
 ---
 
-## Module `express-authkit/express`
+## Module `@kourouma/express-authkit/express`
 
 ### `createExpressAuth(auth, options?)` → `ExpressAuth`
 
@@ -477,10 +477,10 @@ Le package contient ses déclarations TypeScript : voir [TypeScript](typescript.
 Les types sont aussi disponibles pour l'autocomplétion dans vos fichiers JavaScript :
 
 ```javascript
-/** @type {import("express-authkit").UserRepository} */
+/** @type {import("@kourouma/express-authkit").UserRepository} */
 const userRepository = { /* … */ };
 
-/** @param {import("express-authkit").AuthPrincipal} principal */
+/** @param {import("@kourouma/express-authkit").AuthPrincipal} principal */
 function audit(principal) { /* … */ }
 ```
 

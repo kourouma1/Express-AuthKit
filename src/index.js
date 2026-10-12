@@ -4,7 +4,7 @@
  * API publique. Les modules non réexportés ici sont internes et peuvent
  * évoluer sans préavis.
  *
- * @module express-authkit
+ * @module @kourouma/express-authkit
  */
 
 export { createAuthKit } from "./factory/create-auth-kit.js";

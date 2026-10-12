@@ -24,7 +24,7 @@ TypeScript. Elle explique comment démarrer un projet TypeScript et quelles sont
 mkdir mon-api-ts && cd mon-api-ts
 npm init -y
 npm pkg set type=module
-npm install express-authkit express
+npm install @kourouma/express-authkit express
 npm install --save-dev typescript @types/express @types/node
 npm pkg set scripts.build="tsc" scripts.start="node --env-file=.env dist/server.js"
 echo "AUTH_SECRET=$(npx express-authkit secret)" > .env
@@ -54,8 +54,8 @@ Node.js et par la bibliothèque.
 
 ```typescript
 import express from "express";
-import { createAuthKit, type UserRepository } from "express-authkit";
-import { createExpressAuth } from "express-authkit/express";
+import { createAuthKit, type UserRepository } from "@kourouma/express-authkit";
+import { createExpressAuth } from "@kourouma/express-authkit/express";
 
 // 1. Où trouver vos utilisateurs : ici une simple liste, pour la démonstration.
 //    En production, interrogez votre base (voir docs/repository-utilisateur.md).
@@ -136,13 +136,13 @@ Les exemples de la documentation fonctionnent en TypeScript. Seuls trois points 
 | # | En JavaScript | En TypeScript | Pourquoi |
 | --- | --- | --- | --- |
 | 1 | `req.auth.userId` | `req.auth!.userId` | TypeScript ne sait pas que `authenticate()` ou `authorize()` a rempli `req.auth`. Le `!` le lui dit. N'utilisez-le **que** dans une route protégée. |
-| 2 | `const userRepository = { … }` | `const userRepository: UserRepository = { … }` | Le type donne l'autocomplétion et vérifie les paramètres (`email`, `id`). Importez-le avec `import { type UserRepository } from "express-authkit"`. |
+| 2 | `const userRepository = { … }` | `const userRepository: UserRepository = { … }` | Le type donne l'autocomplétion et vérifie les paramètres (`email`, `id`). Importez-le avec `import { type UserRepository } from "@kourouma/express-authkit"`. |
 | 3 | `import { db } from "./db.js"` | `import { db } from "./db.js"` (**même chose**) | Pour vos propres fichiers, gardez l'extension `.js` dans l'import, même si le fichier s'appelle `db.ts` : c'est la règle de `"module": "nodenext"`. |
 
 Ce qui **ne change pas** :
 
-- les imports de la bibliothèque : `import { createAuthKit } from "express-authkit"` et
-  `import { createExpressAuth } from "express-authkit/express"` ;
+- les imports de la bibliothèque : `import { createAuthKit } from "@kourouma/express-authkit"` et
+  `import { createExpressAuth } from "@kourouma/express-authkit/express"` ;
 - `secret: process.env.AUTH_SECRET` fonctionne tel quel, sans `!` : si la variable manque,
   `createAuthKit()` s'arrête avec un message clair ;
 - les options, les noms de fonctions et les réponses HTTP.
@@ -167,7 +167,7 @@ JSDoc. Ce commentaire est ignoré par Node.js : le fichier reste du JavaScript.
 
 ```javascript
 // @ts-check
-/** @type {import("express-authkit").UserRepository} */
+/** @type {import("@kourouma/express-authkit").UserRepository} */
 const userRepository = {
   async findByIdentifier(email) { /* … */ },
   async findById(id) { /* … */ }

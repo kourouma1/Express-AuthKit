@@ -7,7 +7,7 @@ propre au client et journaliser les échecs de connexion sans risque.
 ## Reconnaître une erreur : testez le `code`
 
 ```javascript
-import { AUTH_ERROR_CODES, isAuthKitError } from "express-authkit";
+import { AUTH_ERROR_CODES, isAuthKitError } from "@kourouma/express-authkit";
 
 try {
   await auth.login(credentials);
@@ -66,7 +66,7 @@ Si votre repository (ou un provider) lève une erreur, la bibliothèque l'envelo
 vous savez **quel appel** a échoué :
 
 ```javascript
-import { AUTH_ERROR_CODES } from "express-authkit";
+import { AUTH_ERROR_CODES } from "@kourouma/express-authkit";
 
 app.use((error, req, res, _next) => {
   if (error.code === AUTH_ERROR_CODES.DEPENDENCY_FAILURE) {
@@ -159,7 +159,7 @@ erreurs `INVALID_CREDENTIALS` et `TOKEN_INVALID` :
 | `ACCOUNT_DISABLED` | `isActive !== true`. |
 
 ```javascript
-import { AUTH_ERROR_CODES, isAuthKitError } from "express-authkit";
+import { AUTH_ERROR_CODES, isAuthKitError } from "@kourouma/express-authkit";
 
 app.post("/auth/login", express.json(), loginRateLimiters, async (req, res, next) => {
   try {
@@ -203,7 +203,7 @@ Vous préférez un autre format, par exemple RFC 9457 *Problem Details* ? Écriv
 gestionnaire **à la place** de `errorHandler()` :
 
 ```javascript
-import { AUTH_ERROR_CODES, isAuthKitError } from "express-authkit";
+import { AUTH_ERROR_CODES, isAuthKitError } from "@kourouma/express-authkit";
 
 const STATUS_BY_CODE = {
   [AUTH_ERROR_CODES.INVALID_INPUT]: 400,

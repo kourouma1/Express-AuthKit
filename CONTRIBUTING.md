@@ -10,8 +10,8 @@ Merci de votre intérêt ! Ce guide explique comment proposer une modification.
 ## Mise en place
 
 ```bash
-git clone <url-du-depot>
-cd express-authkit
+git clone https://github.com/kourouma1/Express-AuthKit.git
+cd Express-AuthKit
 npm install
 npm run check        # lint + tests
 ```
@@ -98,7 +98,7 @@ chaque version reçoit une attestation de provenance (lien vérifiable vers le c
    - refuse de continuer si le tag ne correspond pas à `package.json` ;
    - lance lint, types et tests, puis teste le package dans un projet vierge ;
    - publie sur npm : sous l'étiquette `latest`, ou `next` pour une version candidate.
-6. Vérifiez : `npm view express-authkit`.
+6. Vérifiez : `npm view @kourouma/express-authkit`.
 
 > Une version publiée ne peut jamais être republiée. En cas d'erreur, publiez une version
-> corrective (`0.2.1`) et dépréciez l'autre avec `npm deprecate express-authkit@0.2.0 "…"`.
+> corrective (`0.2.1`) et dépréciez l'autre avec `npm deprecate @kourouma/express-authkit@0.2.0 "…"`.

@@ -89,7 +89,7 @@ async function verifyTypeScriptQuickstart(projectDir) {
   run(process.execPath, [tsc, "-p", join(appDir, "tsconfig.json")], appDir);
 
   const compiled = join(appDir, "dist", "server.js");
-  await smokeTestServer(compiled, appDir, readmeLikeChecks({ adminRoute: true }));
+  await smokeTestServer(compiled, appDir, readmeLikeChecks({ adminRoute: true }), projectDir);
   console.log("✔ TypeScript quick start (docs/typescript.md compiled in strict mode and executed)");
 }
 
@@ -127,8 +127,9 @@ async function verifyReadmeQuickstart(projectDir) {
  * @param {string} file
  * @param {string} cwd
  * @param {(baseUrl: string) => Promise<void>} checks
+ * @param {string} [installDir] Dossier où le paquet est installé (pour `npx`), `cwd` par défaut.
  */
-async function smokeTestServer(file, cwd, checks) {
+async function smokeTestServer(file, cwd, checks, installDir = cwd) {
   const source = await readFile(file, "utf8");
   assert.ok(source.includes("3000"), `${file} is expected to listen on port 3000`);
   const port = await findFreePort();
@@ -136,7 +137,7 @@ async function smokeTestServer(file, cwd, checks) {
   const baseUrl = `http://127.0.0.1:${port}`;
 
   // Le secret est produit par la commande documentée, depuis le package installé.
-  const secret = run(process.platform === "win32" ? "npx.cmd" : "npx", ["express-authkit", "secret"], cwd).trim();
+  const secret = run(process.platform === "win32" ? "npx.cmd" : "npx", ["express-authkit", "secret"], installDir).trim();
   const server = spawn(process.execPath, [file], {
     cwd,
     env: { ...process.env, AUTH_SECRET: secret },
@@ -196,7 +197,7 @@ async function verifyExampleApp(workDir, tarball) {
 
   const manifestPath = join(exampleDir, "package.json");
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
-  manifest.dependencies["express-authkit"] = `file:${tarball}`;
+  manifest.dependencies["@kourouma/express-authkit"] = `file:${tarball}`;
   await writeFile(manifestPath, JSON.stringify(manifest, null, 2));
 
   run(NPM, ["install", "--no-audit", "--no-fund"], exampleDir);

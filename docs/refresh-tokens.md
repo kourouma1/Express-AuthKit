@@ -22,7 +22,7 @@ nouvelle paire de jetons. L'ancien refresh token devient alors inutilisable : c'
 **Étape 1 — Activez la fonctionnalité**
 
 ```javascript
-import { createAuthKit, createInMemoryRefreshTokenStore } from "express-authkit";
+import { createAuthKit, createInMemoryRefreshTokenStore } from "@kourouma/express-authkit";
 
 const auth = createAuthKit({
   users: userRepository,
@@ -153,7 +153,7 @@ const RETURNED_COLUMNS =
 
 /**
  * @param {import("pg").Pool} pool
- * @returns {import("express-authkit").RefreshTokenStore}
+ * @returns {import("@kourouma/express-authkit").RefreshTokenStore}
  */
 export function createPgRefreshTokenStore(pool) {
   return {

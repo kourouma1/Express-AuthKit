@@ -156,7 +156,7 @@ app.get("/me", expressAuth.authenticate(), (req, res) => {
 La même logique est disponible sans Express, par exemple dans un worker ou un autre framework :
 
 ```javascript
-import { isAuthorized } from "express-authkit";
+import { isAuthorized } from "@kourouma/express-authkit";
 
 const principal = await auth.verifyAccessToken(token);
 if (!(await isAuthorized(principal, { anyRole: ["admin"] }))) {

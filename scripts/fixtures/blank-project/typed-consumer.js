@@ -4,10 +4,10 @@
 // Chaque « @ts-expect-error » doit réellement produire une erreur : si les types
 // étaient absents (any), la vérification échouerait.
 import express from "express";
-import { AUTH_ERROR_CODES, createAuthKit, createInMemoryRefreshTokenStore, isAuthKitError } from "express-authkit";
-import { createExpressAuth } from "express-authkit/express";
+import { AUTH_ERROR_CODES, createAuthKit, createInMemoryRefreshTokenStore, isAuthKitError } from "@kourouma/express-authkit";
+import { createExpressAuth } from "@kourouma/express-authkit/express";
 
-/** @type {import("express-authkit").UserRepository} */
+/** @type {import("@kourouma/express-authkit").UserRepository} */
 const users = {
   async findByIdentifier(identifier) {
     return identifier === "alice@example.com" ? { id: 1, passwordHash: "$argon2id$…", isActive: true } : null;
@@ -23,7 +23,7 @@ const auth = createAuthKit({
   refreshTokens: { store: createInMemoryRefreshTokenStore() }
 });
 
-/** @param {import("express-authkit").LoginResult} result */
+/** @param {import("@kourouma/express-authkit").LoginResult} result */
 export function readLogin(result) {
   /** @type {string} */
   const token = result.accessToken;

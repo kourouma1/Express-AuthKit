@@ -7,7 +7,7 @@
 ## Vue d'ensemble
 
 ```javascript
-import { createAuthKit } from "express-authkit";
+import { createAuthKit } from "@kourouma/express-authkit";
 
 const auth = createAuthKit({
   users: userRepository,            // obligatoire : votre repository utilisateur

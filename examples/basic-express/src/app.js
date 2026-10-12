@@ -1,5 +1,5 @@
 import express from "express";
-import { createExpressAuth } from "express-authkit/express";
+import { createExpressAuth } from "@kourouma/express-authkit/express";
 
 import { createLoginRateLimiters } from "./rate-limit.js";
 
@@ -8,7 +8,7 @@ import { createLoginRateLimiters } from "./rate-limit.js";
  * tout est injecté, ce qui rend l'application facile à tester.
  *
  * @param {object} dependencies
- * @param {import("express-authkit").AuthKit} dependencies.auth
+ * @param {import("@kourouma/express-authkit").AuthKit} dependencies.auth
  * @param {import("./in-memory-user-repository.js").InMemoryUserRepository} dependencies.users
  * @param {import("express").RequestHandler[]} [dependencies.loginRateLimiters]
  * @param {number} [dependencies.trustProxyHops]

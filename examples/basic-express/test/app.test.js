@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { after, before, describe, it } from "node:test";
 
-import { createAuthKit, createInMemoryRefreshTokenStore } from "express-authkit";
+import { createAuthKit, createInMemoryRefreshTokenStore } from "@kourouma/express-authkit";
 
 import { createApp } from "../src/app.js";
 import { InMemoryUserRepository } from "../src/in-memory-user-repository.js";

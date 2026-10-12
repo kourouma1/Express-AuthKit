@@ -15,11 +15,15 @@ et le projet suit le [Versionnage sémantique](https://semver.org/lang/fr/).
 Tant que le projet est en `0.x`, une version mineure peut contenir des
 changements incompatibles ; ils seront toujours signalés dans ce fichier
 sous la rubrique **Incompatible**. L'API publique se limite aux exports de
-`express-authkit` et `express-authkit/express`.
+`@kourouma/express-authkit` et `@kourouma/express-authkit/express`.
 
 ## [Non publié]
 
 ## [0.1.0] — candidate
+
+Le paquet est publié sous le nom **`@kourouma/express-authkit`** : npm refuse le nom
+`express-authkit`, jugé trop proche du paquet existant `express-auth-kit`. La commande
+`npx express-authkit` garde son nom.
 
 ### Ajouté
 

@@ -1,7 +1,7 @@
-<<<<<<< HEAD
-# Express-AuthKit
-🔐 **Express AuthKit** — A lightweight, secure, and extensible authentication library for Express.js. Simplify JWT authentication, password hashing, and route protection with a clean, modular JavaScript architecture.
-=======
+<p align="center">
+  <img src="docs/assets/banner.jpeg" alt="Express AuthKit — authentification pour Express.js : Argon2id, JWT, middleware de protection des routes" width="100%">
+</p>
+
 # Express AuthKit
 
 > Moteur d'authentification sécurisé, léger et extensible pour Express.js.
@@ -197,4 +197,3 @@ pas des fonctionnalités disponibles.
 ## Licence
 
 [MIT](LICENSE)
->>>>>>> master

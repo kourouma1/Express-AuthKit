@@ -197,7 +197,7 @@ async function verifyExampleApp(workDir, tarball) {
 
   const manifestPath = join(exampleDir, "package.json");
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
-  manifest.dependencies["@kourouma/express-authkit"] = `file:${tarball}`;
+  manifest.dependencies["@express-authkit/core"] = `file:${tarball}`;
   await writeFile(manifestPath, JSON.stringify(manifest, null, 2));
 
   run(NPM, ["install", "--no-audit", "--no-fund"], exampleDir);

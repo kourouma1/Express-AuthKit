@@ -59,8 +59,8 @@ Le `code` de l'erreur (`INVALID_CREDENTIALS`, `TOKEN_MISSING`…) est dans la r�
 
 ### `ERR_PACKAGE_PATH_NOT_EXPORTED`
 
-- **Cause probable** : vous importez un fichier interne (`@kourouma/express-authkit/src/...`).
-- **Solution** : importez uniquement depuis `@kourouma/express-authkit` et `@kourouma/express-authkit/express`.
+- **Cause probable** : vous importez un fichier interne (`@express-authkit/core/src/...`).
+- **Solution** : importez uniquement depuis `@express-authkit/core` et `@express-authkit/core/express`.
 
 ### L'installation de `argon2` échoue
 

@@ -87,7 +87,7 @@ openssl pkey -in private.pem -pubout -out public.pem
 ```javascript
 // eddsa-token-provider.js
 import { SignJWT, errors, importPKCS8, importSPKI, jwtVerify } from "jose";
-import { InvalidTokenError, TokenExpiredError } from "@kourouma/express-authkit";
+import { InvalidTokenError, TokenExpiredError } from "@express-authkit/core";
 
 const ALGORITHM = "EdDSA";
 const TOKEN_TYPE = "at+jwt";
@@ -96,7 +96,7 @@ const TOKEN_TYPE = "at+jwt";
  * TokenProvider signant les jetons avec une clé privée Ed25519.
  * Les services qui vérifient les jetons n'ont besoin que de la clé publique.
  *
- * @returns {Promise<import("@kourouma/express-authkit").TokenProvider>}
+ * @returns {Promise<import("@express-authkit/core").TokenProvider>}
  */
 export async function createEdDsaTokenProvider({ privateKeyPem, publicKeyPem, issuer, audience, expiresInSeconds = 900 }) {
   const privateKey = privateKeyPem ? await importPKCS8(privateKeyPem, ALGORITHM) : undefined;
@@ -146,7 +146,7 @@ export async function createEdDsaTokenProvider({ privateKeyPem, publicKeyPem, is
 ```javascript
 // server.js
 import { readFile } from "node:fs/promises";
-import { createAuthKit } from "@kourouma/express-authkit";
+import { createAuthKit } from "@express-authkit/core";
 import { createEdDsaTokenProvider } from "./eddsa-token-provider.js";
 
 const auth = createAuthKit({
@@ -176,7 +176,7 @@ Il utilise `bcryptjs` (`npm install bcryptjs`).
 ```javascript
 // migrating-password-provider.js
 import bcrypt from "bcryptjs";
-import { createArgon2PasswordProvider } from "@kourouma/express-authkit";
+import { createArgon2PasswordProvider } from "@express-authkit/core";
 
 /**
  * PasswordProvider qui accepte les anciens hash bcrypt et les remplace par
@@ -185,7 +185,7 @@ import { createArgon2PasswordProvider } from "@kourouma/express-authkit";
  * @param {(oldHash: string, newHash: string) => Promise<void>} replaceHash
  *   Persiste le nouveau hash, par exemple :
  *   UPDATE users SET password_hash = $2 WHERE password_hash = $1
- * @returns {import("@kourouma/express-authkit").PasswordProvider}
+ * @returns {import("@express-authkit/core").PasswordProvider}
  */
 export function createMigratingPasswordProvider(replaceHash) {
   const argon2 = createArgon2PasswordProvider();
@@ -238,7 +238,7 @@ méthodes du contrat :
 ```javascript
 import { generateKeyPairSync } from "node:crypto";
 import { test } from "node:test";
-import { assertPasswordProvider, assertTokenProvider } from "@kourouma/express-authkit";
+import { assertPasswordProvider, assertTokenProvider } from "@express-authkit/core";
 
 import { createEdDsaTokenProvider } from "./eddsa-token-provider.js";
 import { createMigratingPasswordProvider } from "./migrating-password-provider.js";
@@ -269,7 +269,7 @@ Les providers intégrés sont exportés. Vous pouvez les utiliser hors de `creat
 par exemple dans un script de migration :
 
 ```javascript
-import { createArgon2PasswordProvider } from "@kourouma/express-authkit";
+import { createArgon2PasswordProvider } from "@express-authkit/core";
 
 const passwords = createArgon2PasswordProvider({ memoryCost: 65536, timeCost: 3, parallelism: 4 });
 const hash = await passwords.hash("new password from a reset flow");

@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 
 import express from "express";
-import { createAuthKit, isAuthKitError } from "@kourouma/express-authkit";
-import { createExpressAuth } from "@kourouma/express-authkit/express";
+import { createAuthKit, isAuthKitError } from "@express-authkit/core";
+import { createExpressAuth } from "@express-authkit/core/express";
 
 const users = new Map();
 const userRepository = {

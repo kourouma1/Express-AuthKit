@@ -1,10 +1,10 @@
 /**
- * Express AuthKit — adaptateur Express.js (`@kourouma/express-authkit/express`).
+ * Express AuthKit — adaptateur Express.js (`@express-authkit/core/express`).
  *
  * Ce module n’importe pas Express : il produit uniquement des middlewares
  * standard `(req, res, next)`, compatibles avec Express 4 et 5.
  *
- * @module @kourouma/express-authkit/express
+ * @module @express-authkit/core/express
  */
 
 import { assertImplements } from "../../core/contracts/assert-contract.js";

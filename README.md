@@ -40,11 +40,11 @@ Vous gardez votre base de données et votre modèle d'utilisateur. Vous écrivez
 ## Installation
 
 ```bash
-npm install @kourouma/express-authkit express
+npm install @express-authkit/core express
 ```
 
 > Tant que le package n'est pas publié sur npm, créez l'archive avec `npm pack` dans ce dépôt,
-> puis installez-la dans votre projet : `npm install /chemin/vers/kourouma-express-authkit-0.1.0.tgz express`.
+> puis installez-la dans votre projet : `npm install /chemin/vers/express-authkit-core-0.1.0.tgz express`.
 
 ## Démarrage en cinq minutes
 
@@ -58,7 +58,7 @@ npm install @kourouma/express-authkit express
 mkdir mon-api && cd mon-api
 npm init -y
 npm pkg set type=module
-npm install @kourouma/express-authkit express
+npm install @express-authkit/core express
 ```
 
 **Étape 2 — Créez un secret**
@@ -75,8 +75,8 @@ Ne partagez jamais ce fichier et ne le mettez pas dans Git.
 
 ```javascript
 import express from "express";
-import { createAuthKit } from "@kourouma/express-authkit";
-import { createExpressAuth } from "@kourouma/express-authkit/express";
+import { createAuthKit } from "@express-authkit/core";
+import { createExpressAuth } from "@express-authkit/core/express";
 
 // 1. Où trouver vos utilisateurs : ici une simple liste, pour la démonstration.
 //    En production, interrogez votre base (voir docs/repository-utilisateur.md).

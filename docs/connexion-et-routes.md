@@ -16,8 +16,8 @@ connectés.
 
 ```javascript
 import express from "express";
-import { createAuthKit } from "@kourouma/express-authkit";
-import { createExpressAuth } from "@kourouma/express-authkit/express";
+import { createAuthKit } from "@express-authkit/core";
+import { createExpressAuth } from "@express-authkit/core/express";
 
 const auth = createAuthKit({ users: userRepository, jwt: { /* … */ } });
 const expressAuth = createExpressAuth(auth);

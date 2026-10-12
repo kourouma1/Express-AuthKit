@@ -7,7 +7,7 @@ import { describe, it } from "node:test";
  */
 describe("package exports", () => {
   it("exposes the documented root API", async () => {
-    const root = await import("@kourouma/express-authkit");
+    const root = await import("@express-authkit/core");
     assert.deepEqual(Object.keys(root).sort(), [
       "AUTH_ERROR_CODES",
       "AUTH_FAILURE_REASONS",
@@ -37,18 +37,18 @@ describe("package exports", () => {
   });
 
   it("exposes the Express adapter as a subpath", async () => {
-    const adapter = await import("@kourouma/express-authkit/express");
+    const adapter = await import("@express-authkit/core/express");
     assert.deepEqual(Object.keys(adapter), ["createExpressAuth"]);
   });
 
   it("shares error classes between entry points", async () => {
-    const root = await import("@kourouma/express-authkit");
-    const adapter = await import("@kourouma/express-authkit/express");
+    const root = await import("@express-authkit/core");
+    const adapter = await import("@express-authkit/core/express");
     assert.throws(() => adapter.createExpressAuth({}), root.ContractViolationError);
   });
 
   it("does not expose internal modules", async () => {
-    await assert.rejects(import("@kourouma/express-authkit/src/core/errors.js"), { code: "ERR_PACKAGE_PATH_NOT_EXPORTED" });
-    await assert.rejects(import("@kourouma/express-authkit/core"), { code: "ERR_PACKAGE_PATH_NOT_EXPORTED" });
+    await assert.rejects(import("@express-authkit/core/src/core/errors.js"), { code: "ERR_PACKAGE_PATH_NOT_EXPORTED" });
+    await assert.rejects(import("@express-authkit/core/core"), { code: "ERR_PACKAGE_PATH_NOT_EXPORTED" });
   });
 });

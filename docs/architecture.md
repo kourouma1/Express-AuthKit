@@ -100,7 +100,7 @@ lors des revues de code.
 ```text
 Express-AuthKit/
 ├── src/
-│   ├── index.js                    # entrée publique "@kourouma/express-authkit"
+│   ├── index.js                    # entrée publique "@express-authkit/core"
 │   ├── core/
 │   │   ├── authentication-service.js
 │   │   ├── errors.js
@@ -109,7 +109,7 @@ Express-AuthKit/
 │   ├── config/
 │   ├── providers/
 │   ├── factory/
-│   └── adapters/express/index.js   # entrée publique "@kourouma/express-authkit/express"
+│   └── adapters/express/index.js   # entrée publique "@express-authkit/core/express"
 ├── tests/                          # unit / security / integration / helpers
 ├── examples/basic-express/         # application complète et testée
 ├── scripts/verify-package.js       # test du tarball dans un projet vierge
@@ -174,11 +174,11 @@ pourraient s'ajouter sans tout réécrire.
 Le package est **ESM uniquement** (il utilise `import`, pas `require`).
 
 Depuis Node.js 22.12, `require()` peut charger un module ES synchrone par défaut. En
-pratique, un projet CommonJS peut donc déjà charger `@kourouma/express-authkit` avec `require()` sur
+pratique, un projet CommonJS peut donc déjà charger `@express-authkit/core` avec `require()` sur
 les versions supportées. Mais ce n'est **ni testé ni garanti** en 0.1.0.
 
 Une compatibilité officielle demanderait :
 
-1. des tests CI dédiés à `require("@kourouma/express-authkit")` ;
+1. des tests CI dédiés à `require("@express-authkit/core")` ;
 2. une condition `"require"` explicite dans `exports`, si une variante générée devient nécessaire ;
 3. l'absence de `top-level await` dans `src/` (déjà le cas, à préserver).

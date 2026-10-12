@@ -28,7 +28,7 @@ const passwordHash = await auth.password.hash(plainPassword);
 ### Exemple complet : route d'inscription
 
 ```javascript
-import { InvalidInputError } from "@kourouma/express-authkit";
+import { InvalidInputError } from "@express-authkit/core";
 
 const MIN_PASSWORD_LENGTH = 12; // OWASP : au moins 8, 12 à 15 recommandés
 

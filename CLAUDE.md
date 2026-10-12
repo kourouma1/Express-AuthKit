@@ -46,7 +46,7 @@ The project is organized into:
 * `<span>src/config/</span>`: configuration validation.
 * `<span>src/factory/</span>`: dependency injection and engine initialization.
 * `src/core/messages.js`: every error message, in one place.
-* `bin/`: the `@kourouma/express-authkit` CLI (`npx express-authkit secret`).
+* `bin/`: the `@express-authkit/core` CLI (`npx express-authkit secret`).
 * `scripts/`: type generation and packed-tarball verification.
 * `types/`: generated TypeScript declarations (git-ignored).
 * `<span>tests/</span>`: unit, integration, and security tests.
@@ -71,8 +71,8 @@ Maintain a simple and stable developer experience.
 Target API:
 
 ```
-import { createAuthKit } from "@kourouma/express-authkit";
-import { createExpressAuth } from "@kourouma/express-authkit/express";
+import { createAuthKit } from "@express-authkit/core";
+import { createExpressAuth } from "@express-authkit/core/express";
 
 const auth = createAuthKit({
   users: userRepository,

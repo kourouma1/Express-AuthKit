@@ -1,4 +1,4 @@
-import { createAuthKit, createInMemoryRefreshTokenStore } from "@kourouma/express-authkit";
+import { createAuthKit, createInMemoryRefreshTokenStore } from "@express-authkit/core";
 
 import { createApp } from "./app.js";
 import { InMemoryUserRepository } from "./in-memory-user-repository.js";
@@ -54,7 +54,7 @@ async function main() {
 }
 
 /**
- * @param {import("@kourouma/express-authkit").AuthKit} auth
+ * @param {import("@express-authkit/core").AuthKit} auth
  * @param {InMemoryUserRepository} users
  */
 async function seedDemoUser(auth, users) {

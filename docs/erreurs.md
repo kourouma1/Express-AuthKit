@@ -33,14 +33,15 @@ applicatif) sont **propagées telles quelles**.
 
 ## Avec Express
 
-### Dans `authenticate()`
+### Dans `authenticate()` et `login()`
 
-Le middleware répond lui-même aux erreurs **client** (401) et transmet les autres à
-`next(error)`. Vous n'avez rien à faire pour les routes protégées.
+Ces handlers répondent eux-mêmes aux erreurs **client** (400 / 401) et transmettent les autres
+à `next(error)`. Vous n'avez rien à faire pour les routes protégées ni pour la route de connexion.
 
 ### Dans vos routes : `expressAuth.errorHandler()`
 
-Pour les erreurs levées par `auth.login()` ou `auth.password.hash()` dans vos propres routes,
+Pour les erreurs levées par `auth.login()` ou `auth.password.hash()` dans **vos propres** routes
+(route de connexion personnalisée, inscription…),
 ajoutez le gestionnaire d'erreurs **après** vos routes :
 
 ```javascript

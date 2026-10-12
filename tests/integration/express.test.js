@@ -200,3 +200,79 @@ describe("createExpressAuth validation", () => {
     }
   });
 });
+
+describe("expressAuth.login()", () => {
+  let server;
+
+  before(async () => {
+    const { auth } = await createTestAuthKit();
+    const expressAuth = createExpressAuth(auth);
+    const app = express();
+    app.post("/login", express.json(), expressAuth.login());
+    app.post("/login-email", express.json(), expressAuth.login({ identifierField: "email" }));
+    app.post("/login-no-parser", expressAuth.login());
+    app.get("/profile", expressAuth.authenticate(), (req, res) => res.json({ userId: req.auth.userId }));
+    server = await startServer(app);
+  });
+
+  after(() => server.close());
+
+  it("logs in with a single line of setup and the token works", async () => {
+    const response = await server.request("/login", {
+      method: "POST",
+      body: { identifier: "alice@example.test", password: TEST_PASSWORD }
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(Object.keys(response.body).sort(), ["accessToken", "expiresIn", "tokenType"]);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+
+    const profile = await server.request("/profile", {
+      headers: { authorization: `Bearer ${response.body.accessToken}` }
+    });
+    assert.deepEqual(profile.body, { userId: "user-1" });
+  });
+
+  it("supports a custom identifier field", async () => {
+    const response = await server.request("/login-email", {
+      method: "POST",
+      body: { email: "alice@example.test", password: TEST_PASSWORD }
+    });
+    assert.equal(response.status, 200);
+  });
+
+  it("answers 401 INVALID_CREDENTIALS without needing errorHandler()", async () => {
+    const response = await server.request("/login", {
+      method: "POST",
+      body: { identifier: "alice@example.test", password: "wrong password" }
+    });
+    assert.equal(response.status, 401);
+    assert.deepEqual(response.body, { error: { code: "INVALID_CREDENTIALS", message: "Invalid credentials." } });
+  });
+
+  it("explains a missing JSON body", async () => {
+    const response = await server.request("/login-no-parser", {
+      method: "POST",
+      body: { identifier: "alice@example.test", password: TEST_PASSWORD }
+    });
+    assert.equal(response.status, 400);
+    assert.equal(response.body.error.code, "INVALID_INPUT");
+    assert.match(response.body.error.message, /Content-Type: application\/json/);
+  });
+
+  it("ignores inherited properties of the body", async () => {
+    const response = await server.request("/login", {
+      method: "POST",
+      body: JSON.parse('{"__proto__": {"identifier": "alice@example.test", "password": "x"}}')
+    });
+    assert.equal(response.status, 400);
+  });
+
+  it("validates its options", async () => {
+    const { auth } = await createTestAuthKit();
+    const expressAuth = createExpressAuth(auth);
+    for (const identifierField of ["", "a.b", "__proto__ ", 42]) {
+      assert.throws(() => expressAuth.login({ identifierField }), ConfigurationError);
+    }
+    assert.throws(() => expressAuth.login({ field: "email" }), ConfigurationError);
+  });
+});

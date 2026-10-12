@@ -11,8 +11,9 @@
  * Utilisation : npm run test:package
  */
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -30,7 +31,7 @@ async function packAndInspect(workDir) {
   const paths = pack.files.map((file) => file.path);
 
   for (const path of paths) {
-    const allowed = path.startsWith("src/") || ALLOWED_TOP_LEVEL.has(path);
+    const allowed = path.startsWith("src/") || path.startsWith("bin/") || ALLOWED_TOP_LEVEL.has(path);
     assert.ok(allowed, `Unexpected file in the package: ${path}`);
     assert.ok(!/\.env|\.pem$|\.key$|\.ts$/.test(path), `Sensitive or forbidden file in the package: ${path}`);
   }
@@ -48,6 +49,58 @@ async function verifyBlankProject(workDir, tarball) {
   run(NPM, ["install", "--no-audit", "--no-fund", tarball, "express@^5"], projectDir);
   process.stdout.write(run(process.execPath, ["consumer.js"], projectDir));
   console.log("✔ blank JavaScript project");
+  await verifyReadmeQuickstart(projectDir);
+}
+
+/**
+ * Exécute tel quel le `server.js` du « Démarrage en cinq minutes » du README,
+ * avec un secret produit par `npx express-authkit secret` : la documentation
+ * ne peut pas diverger de l'API sans que cette vérification échoue.
+ */
+async function verifyReadmeQuickstart(projectDir) {
+  const readme = await readFile(join(ROOT, "README.md"), "utf8");
+  const quickstart = readme.slice(readme.indexOf("## Démarrage en cinq minutes"));
+  const code = /```javascript\n([\s\S]*?)```/.exec(quickstart)?.[1];
+  assert.ok(code, "README quick-start code block not found");
+  // Seul le port est remplacé, pour ne pas entrer en conflit avec un service local.
+  const port = await findFreePort();
+  assert.ok(code.includes("3000"), "README quick-start is expected to listen on port 3000");
+  await writeFile(join(projectDir, "server.js"), code.replaceAll("3000", String(port)));
+  const baseUrl = `http://127.0.0.1:${port}`;
+
+  const secret = run(process.platform === "win32" ? "npx.cmd" : "npx", ["express-authkit", "secret"], projectDir).trim();
+  const server = spawn(process.execPath, ["server.js"], {
+    cwd: projectDir,
+    env: { ...process.env, AUTH_SECRET: secret },
+    stdio: ["ignore", "pipe", "inherit"]
+  });
+  try {
+    await new Promise((resolveReady, reject) => {
+      const timer = setTimeout(() => reject(new Error("README server did not start")), 20_000);
+      server.stdout.on("data", (chunk) => {
+        if (String(chunk).includes(`http://localhost:${port}`)) {
+          clearTimeout(timer);
+          resolveReady();
+        }
+      });
+      server.once("exit", (code) => reject(new Error(`README server exited with code ${code}`)));
+    });
+
+    const login = await fetch(`${baseUrl}/login`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "alice@example.com", password: "example-password" })
+    });
+    assert.equal(login.status, 200, "README login failed");
+    const { accessToken } = await login.json();
+
+    const profile = await fetch(`${baseUrl}/profile`, { headers: { authorization: `Bearer ${accessToken}` } });
+    assert.deepEqual(await profile.json(), { userId: "1" });
+    assert.equal((await fetch(`${baseUrl}/profile`)).status, 401);
+  } finally {
+    server.kill();
+  }
+  console.log("✔ README quick start (copied verbatim) and npx express-authkit secret");
 }
 
 async function verifyExampleApp(workDir, tarball) {
@@ -65,6 +118,16 @@ async function verifyExampleApp(workDir, tarball) {
   run(NPM, ["install", "--no-audit", "--no-fund"], exampleDir);
   run(NPM, ["test"], exampleDir);
   console.log("✔ examples/basic-express against the packed tarball");
+}
+
+function findFreePort() {
+  return new Promise((resolvePort, reject) => {
+    const probe = createServer().listen(0, "127.0.0.1", () => {
+      const { port } = probe.address();
+      probe.close(() => resolvePort(port));
+    });
+    probe.once("error", reject);
+  });
 }
 
 const workDir = await mkdtemp(join(tmpdir(), "express-authkit-verify-"));

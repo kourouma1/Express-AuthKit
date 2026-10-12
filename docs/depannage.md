@@ -17,7 +17,7 @@ ou que la variable est définie dans votre environnement d'exécution (Docker, s
 Le secret est trop court ou ressemble à une valeur d'exemple. Générez-en un nouveau :
 
 ```bash
-node -e "console.log(require('node:crypto').randomBytes(48).toString('base64url'))"
+npx express-authkit secret
 ```
 
 Avec `HS384` il faut au moins 48 octets, avec `HS512` au moins 64.
@@ -61,6 +61,13 @@ Vous importez un fichier interne (`express-authkit/src/...`). Utilisez uniquemen
 - **Docker** : installez les dépendances **dans** l'image (`npm ci` dans le `Dockerfile`),
   ne copiez pas un `node_modules` construit sur une autre plateforme.
 
+### `EADDRINUSE` ou réponse HTML inattendue sur `localhost:3000`
+
+Un autre programme utilise déjà le port 3000 (conteneur Docker, autre serveur de
+développement). Changez le port dans `app.listen(…)`, par exemple `app.listen(3001)`.
+Pour savoir quel programme l'occupe : `lsof -i :3000` (Linux/macOS) ou
+`netstat -ano | findstr :3000` (Windows).
+
 ## À la connexion
 
 ### Toujours `401 INVALID_CREDENTIALS` avec le bon mot de passe
@@ -75,10 +82,18 @@ Vérifiez dans l'ordre :
 4. Journalisez `error.reason` côté serveur pour connaître la cause exacte
    (`USER_NOT_FOUND`, `INVALID_PASSWORD`, `ACCOUNT_DISABLED`).
 
+### `400 INVALID_INPUT` : `Request body must be a JSON object…`
+
+Le corps de la requête n'a pas été lu. Vérifiez les deux côtés :
+
+- serveur : `express.json()` doit être placé **avant** `expressAuth.login()`
+  (`app.post("/login", express.json(), expressAuth.login())`) ;
+- client : l'en-tête `Content-Type: application/json` doit être envoyé.
+
 ### `400 INVALID_INPUT` : `` `identifier` must be a non-empty string ``
 
-Le corps de la requête n'est pas lu. Ajoutez `app.use(express.json())` **avant** la route,
-et envoyez l'en-tête `Content-Type: application/json`.
+Le champ attendu est absent du corps JSON. Si votre formulaire envoie `email`, configurez
+`expressAuth.login({ identifierField: "email" })`.
 
 ### Erreur 500 et `InvalidPasswordHashError`
 
@@ -87,8 +102,10 @@ Le hash stocké n'est pas au format Argon2id (bcrypt, SHA-256, texte brut…). V
 
 ### Erreur 500 et `ContractViolationError` pendant une requête
 
-Le repository renvoie un objet mal formé : `id` non textuel (nombre, `ObjectId`), `passwordHash`
-absent (champ exclu par `select`), `isActive` absent. Corrigez la conversion dans le repository
+Le repository renvoie un objet mal formé ; le message indique la correction. Causes
+fréquentes : `passwordHash` absent (champ exclu par `select`), `isActive` absent (renvoyez
+`isActive: true` si vos comptes ne peuvent pas être désactivés), `id` d'un type non pris en
+charge (seuls chaîne, entier, `BigInt` et `ObjectId` sont acceptés). Corrigez la conversion dans le repository
 (voir [mettre en correspondance un modèle existant](repository-utilisateur.md#mettre-en-correspondance-un-modèle-existant)).
 
 ### La connexion est lente (plusieurs centaines de ms)
@@ -110,7 +127,7 @@ le minimum. Dans les tests automatisés, utilisez le minimum accepté
 
 - Les instances ne partagent pas le même `AUTH_SECRET`, `issuer` ou `audience`.
 - L'utilisateur a été désactivé ou supprimé, ou `findById()` ne retrouve pas l'utilisateur
-  à partir de `id` en chaîne (conversion `ObjectId`/entier manquante).
+  à partir de l'`id` reçu **en chaîne** (pour une clé entière avec Prisma, utilisez `Number(id)`).
 - L'horloge du serveur est en retard (`iat` dans le futur) : synchronisez-la (NTP) ou
   réglez `jwt.clockToleranceSeconds` (60 s maximum).
 

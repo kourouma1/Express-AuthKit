@@ -5,14 +5,15 @@ import { ConfigurationError } from "../core/errors.js";
  *
  * Ce contrôle ne peut pas prouver qu’un secret est aléatoire : il rejette
  * seulement les erreurs fréquentes (valeurs d’exemple, courtes ou répétées).
- * Générez toujours les secrets avec un générateur aléatoire sûr, par exemple :
- * `node -e "console.log(require('node:crypto').randomBytes(48).toString('base64url'))"`.
+ * Générez toujours les secrets avec un générateur aléatoire sûr, par exemple
+ * `npx express-authkit secret`.
  *
  * @module config/secret-strength
  */
 
 const GENERATE_HINT =
-  "Generate one with: node -e \"console.log(require('node:crypto').randomBytes(48).toString('base64url'))\"";
+  "Generate one with: npx express-authkit secret " +
+  "(or: node -e \"console.log(require('node:crypto').randomBytes(48).toString('base64url'))\")";
 
 /** Fragments qui signalent une valeur d’exemple copiée d’un tutoriel ou d’un `.env.example`. */
 const PLACEHOLDER_FRAGMENTS = Object.freeze([

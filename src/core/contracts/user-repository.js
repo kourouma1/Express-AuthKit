@@ -9,7 +9,7 @@ import { assertImplements } from "./assert-contract.js";
  * jamais copiées dans les jetons ni dans le principal authentifié.
  *
  * @typedef {object} AuthUserRecord
- * @property {string} id Identifiant stable, unique et non secret ; devient la revendication JWT `sub`.
+ * @property {string | number | bigint | { toHexString(): string }} id Identifiant stable, unique et non secret (chaîne, entier ou ObjectId MongoDB) ; converti en chaîne, il devient la revendication JWT `sub`.
  * @property {string} passwordHash Hash Argon2id produit par `auth.password.hash()`.
  * @property {boolean} isActive Doit valoir exactement `true` pour autoriser la connexion.
  */
@@ -62,16 +62,44 @@ export function normalizeUserRecord(record) {
     throw new ContractViolationError("UserRepository must resolve to an object, null or undefined.");
   }
 
-  const { id, passwordHash, isActive } = /** @type {Record<string, unknown>} */ (record);
-  if (typeof id !== "string" || id.length === 0) {
-    throw new ContractViolationError("UserRepository records must have a non-empty string `id`.");
-  }
+  const { passwordHash, isActive } = /** @type {Record<string, unknown>} */ (record);
+  const id = normalizeUserId(/** @type {Record<string, unknown>} */ (record).id);
   if (typeof passwordHash !== "string" || passwordHash.length === 0) {
-    throw new ContractViolationError("UserRepository records must have a non-empty string `passwordHash`.");
+    throw new ContractViolationError(
+      "UserRepository records must have a non-empty string `passwordHash`. " +
+        "If your query selects specific fields, include the password hash field."
+    );
   }
   if (typeof isActive !== "boolean") {
-    throw new ContractViolationError("UserRepository records must have a boolean `isActive`.");
+    throw new ContractViolationError(
+      "UserRepository records must have a boolean `isActive`. " +
+        "If your application cannot disable accounts, return `isActive: true`."
+    );
   }
 
   return { id, passwordHash, isActive };
+}
+
+/**
+ * Accepte les formes d’identifiant les plus courantes et les convertit en
+ * chaîne : texte, entier auto-incrémenté (SQL), BigInt et ObjectId MongoDB.
+ * La conversion est sans perte, ce qui évite aux applications de l’écrire.
+ *
+ * @param {unknown} id
+ * @returns {string}
+ * @throws {ContractViolationError}
+ */
+function normalizeUserId(id) {
+  if (typeof id === "string" && id.length > 0) {
+    return id;
+  }
+  if ((typeof id === "number" && Number.isSafeInteger(id)) || typeof id === "bigint") {
+    return String(id);
+  }
+  if (id !== null && typeof id === "object" && typeof id.toHexString === "function") {
+    return id.toHexString();
+  }
+  throw new ContractViolationError(
+    "UserRepository records must have an `id`: a non-empty string, an integer or a MongoDB ObjectId."
+  );
 }

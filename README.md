@@ -71,10 +71,10 @@ npm pkg set type=module
 npm install express-authkit express
 ```
 
-**2. Générez un secret** (au moins 32 octets aléatoires) et placez-le dans un fichier `.env` :
+**2. Générez un secret** et placez-le dans un fichier `.env` :
 
 ```bash
-echo "AUTH_SECRET=$(node -e "console.log(require('node:crypto').randomBytes(48).toString('base64url'))")" > .env
+echo "AUTH_SECRET=$(npx express-authkit secret)" > .env
 ```
 
 **3. Créez `server.js`**
@@ -84,23 +84,15 @@ import express from "express";
 import { createAuthKit } from "express-authkit";
 import { createExpressAuth } from "express-authkit/express";
 
-// 1. Repository utilisateur : ici en mémoire, pour la démonstration.
-//    En production, interrogez votre base de données (voir docs/repository-utilisateur.md).
-const usersById = new Map();
+// 1. Où trouver vos utilisateurs : ici une simple liste, pour la démonstration.
+//    En production, interrogez votre base (voir docs/repository-utilisateur.md).
+const users = [];
 const userRepository = {
-  async findByIdentifier(identifier) {
-    const email = identifier.trim().toLowerCase();
-    for (const user of usersById.values()) {
-      if (user.email === email) return user;
-    }
-    return null;
-  },
-  async findById(id) {
-    return usersById.get(id) ?? null;
-  }
+  findByIdentifier: async (email) => users.find((user) => user.email === email.toLowerCase()) ?? null,
+  findById: async (id) => users.find((user) => user.id === id) ?? null
 };
 
-// 2. Moteur d'authentification : la configuration est validée immédiatement.
+// 2. Le moteur d'authentification (la configuration est vérifiée immédiatement).
 const auth = createAuthKit({
   users: userRepository,
   jwt: {
@@ -112,35 +104,29 @@ const auth = createAuthKit({
 });
 const expressAuth = createExpressAuth(auth);
 
-// 3. Utilisateur de démonstration (ne codez jamais de mot de passe réel en dur).
-const hash = await auth.password.hash("example-password");
-usersById.set("1", { id: "1", email: "alice@example.com", passwordHash: hash, isActive: true });
-
-// 4. Application Express.
-const app = express();
-app.use(express.json());
-
-app.post("/login", async (req, res, next) => {
-  try {
-    const { accessToken, tokenType, expiresIn } = await auth.login({
-      identifier: req.body?.identifier,
-      password: req.body?.password
-    });
-    res.json({ accessToken, tokenType, expiresIn });
-  } catch (error) {
-    next(error);
-  }
+// 3. Un utilisateur de démonstration (ne codez jamais de vrai mot de passe en dur).
+users.push({
+  id: "1",
+  email: "alice@example.com",
+  passwordHash: await auth.password.hash("example-password"),
+  isActive: true
 });
+
+// 4. L'application : une route de connexion et une route protégée.
+const app = express();
+
+app.post("/login", express.json(), expressAuth.login({ identifierField: "email" }));
 
 app.get("/profile", expressAuth.authenticate(), (req, res) => {
   res.json({ userId: req.auth.userId });
 });
 
-// Transforme les erreurs d'authentification en réponses JSON 400 / 401.
-app.use(expressAuth.errorHandler());
-
 app.listen(3000, () => console.log("API sur http://localhost:3000"));
 ```
+
+C'est tout : `expressAuth.login()` lit `email` et `password` dans le corps JSON et répond avec
+le token, ou avec une erreur JSON claire (400 / 401). `expressAuth.authenticate()` refuse
+toute requête sans token valide et place l'utilisateur dans `req.auth`.
 
 **4. Lancez et testez**
 
@@ -154,7 +140,7 @@ Dans un autre terminal :
 # Connexion : renvoie { "accessToken": "...", "tokenType": "Bearer", "expiresIn": 900 }
 curl -s -X POST http://localhost:3000/login \
   -H "content-type: application/json" \
-  -d '{"identifier":"alice@example.com","password":"example-password"}'
+  -d '{"email":"alice@example.com","password":"example-password"}'
 
 # Route protégée sans token : 401 {"error":{"code":"TOKEN_MISSING",...}}
 curl -i http://localhost:3000/profile
@@ -169,6 +155,22 @@ curl -s http://localhost:3000/profile -H "authorization: Bearer <accessToken>"
 
 Une application complète (repository, rate limiting avec Redis optionnel, tests) se trouve dans
 [examples/basic-express](examples/basic-express).
+
+## L'essentiel en un coup d'œil
+
+| Besoin | Code |
+| --- | --- |
+| Créer le moteur | `const auth = createAuthKit({ users, jwt: { secret, issuer, audience } })` |
+| L'adapter à Express | `const expressAuth = createExpressAuth(auth)` |
+| Route de connexion | `app.post("/login", express.json(), expressAuth.login())` |
+| Protéger une route | `app.get("/me", expressAuth.authenticate(), handler)` → `req.auth.userId` |
+| Hacher un mot de passe (inscription) | `await auth.password.hash(password)` |
+| Vérifier un mot de passe | `await auth.password.verify(password, hash)` |
+| Générer un secret | `npx express-authkit secret` |
+
+Votre repository n'a que deux méthodes à écrire, `findByIdentifier()` et `findById()`, qui
+renvoient `{ id, passwordHash, isActive }` ou `null`. `id` peut être une chaîne, un entier
+(SQL) ou un `ObjectId` (MongoDB) : la conversion est automatique.
 
 ## Documentation
 

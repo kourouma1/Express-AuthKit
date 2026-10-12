@@ -94,6 +94,23 @@ describe("login security", () => {
     await assert.rejects(auth.verifyAccessToken(accessToken), InvalidTokenError);
   });
 
+  it("works end to end with numeric identifiers (SQL auto-increment)", async () => {
+    const auth0 = createAuthKit({ users: createInMemoryUserRepository(), jwt: jwtOptions(), password: FAST_ARGON2 });
+    const passwordHash = await auth0.password.hash(TEST_PASSWORD);
+    const rows = new Map([[42, { id: 42, passwordHash, isActive: true }]]);
+    const auth = createAuthKit({
+      users: {
+        findByIdentifier: async (identifier) => (identifier === "carol" ? rows.get(42) : null),
+        findById: async (id) => rows.get(Number(id)) ?? null
+      },
+      jwt: jwtOptions(),
+      password: FAST_ARGON2
+    });
+    const { accessToken, principal } = await auth.login({ identifier: "carol", password: TEST_PASSWORD });
+    assert.equal(principal.userId, "42");
+    assert.equal((await auth.verifyAccessToken(accessToken)).userId, "42");
+  });
+
   it("surfaces unreadable stored hashes as server errors, not as wrong passwords", async () => {
     const repository = createInMemoryUserRepository([
       { id: "legacy", email: "legacy@example.test", passwordHash: "$2b$10$legacybcrypthash", isActive: true }

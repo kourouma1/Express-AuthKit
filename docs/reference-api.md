@@ -144,7 +144,7 @@ function audit(principal) { /* … */ }
 | `auth` | `AuthKit` | Moteur créé par `createAuthKit()`. |
 | `options.realm` | `string` | Domaine annoncé dans `WWW-Authenticate` (défaut `"api"`, 1 à 64 caractères `A-Z a-z 0-9 espace . _ -`). |
 
-Lève `ContractViolationError` si `auth` n'expose pas `verifyAccessToken()`, et
+Lève `ContractViolationError` si `auth` n'expose pas `login()` et `verifyAccessToken()`, et
 `ConfigurationError` pour une option invalide.
 
 #### `expressAuth.authenticate()` → middleware
@@ -155,11 +155,32 @@ Lève `ContractViolationError` si `auth` n'expose pas `verifyAccessToken()`, et
   en-têtes `WWW-Authenticate` et `Cache-Control: no-store`.
 - Autre erreur : `next(error)`.
 
+#### `expressAuth.login(options?)` → handler de connexion
+
+| Option | Type | Défaut | Description |
+| --- | --- | --- | --- |
+| `identifierField` | `string` | `"identifier"` | Champ du corps JSON contenant l'identifiant (`"email"`, `"username"`…). |
+
+- Nécessite un parseur JSON en amont (`express.json()`).
+- Succès : `200 { accessToken, tokenType: "Bearer", expiresIn }` avec `Cache-Control: no-store`.
+- Échec : 400 (`INVALID_INPUT`) ou 401 (`INVALID_CREDENTIALS`) en JSON.
+- Autre erreur : `next(error)`.
+- Ce n'est pas une route automatique : vous le montez sur l'URL de votre choix.
+
 #### `expressAuth.errorHandler()` → middleware d'erreur
 
 Convertit `INVALID_INPUT` (400), `INVALID_CREDENTIALS`, `TOKEN_MISSING`, `TOKEN_INVALID`,
 `TOKEN_EXPIRED` (401) en JSON. Transmet toute autre erreur avec `next(error)`, ainsi que
 toute erreur survenant après l'envoi des en-têtes.
+
+---
+
+## Ligne de commande
+
+```bash
+npx express-authkit secret   # affiche un secret JWT aléatoire (48 octets, base64url)
+npx express-authkit help     # aide
+```
 
 ---
 

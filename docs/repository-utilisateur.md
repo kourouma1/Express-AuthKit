@@ -25,7 +25,7 @@ Les deux méthodes doivent renvoyer une promesse résolue avec :
 
 | Champ | Type | Rôle |
 | --- | --- | --- |
-| `id` | `string` non vide | Identifiant stable et non secret. Devient le `sub` du JWT et `req.auth.userId`. Convertissez les identifiants numériques ou `ObjectId` en chaîne. |
+| `id` | chaîne, entier, `BigInt` ou `ObjectId` | Identifiant stable et non secret. Il est **converti automatiquement en chaîne** : il devient le `sub` du JWT et `req.auth.userId`. `findById()` reçoit donc toujours une chaîne (`"42"`, pas `42`). |
 | `passwordHash` | `string` | Hash produit par `auth.password.hash()`. |
 | `isActive` | `boolean` | Doit valoir **exactement** `true` pour autoriser l'accès. |
 
@@ -39,8 +39,9 @@ copiés dans le token ni dans `req.auth`.
 - **Ne levez une erreur que pour un problème d'infrastructure** (base indisponible…).
   Elle est alors propagée telle quelle : avec l'adaptateur Express, elle arrive dans votre
   gestionnaire d'erreurs (réponse 500).
-- Un enregistrement mal formé (`id` numérique, `isActive` absent…) lève une
-  `ContractViolationError` : c'est une erreur de programmation à corriger.
+- Un enregistrement mal formé (`passwordHash` non sélectionné, `isActive` absent…) lève une
+  `ContractViolationError` dont le message indique comment corriger.
+- Votre modèle n'a pas de notion de compte désactivé ? Renvoyez simplement `isActive: true`.
 - `identifier` et `id` sont **toujours des chaînes** quand ils arrivent dans le repository :
   le moteur refuse en amont tout autre type (protection contre l'injection d'opérateurs NoSQL
   comme `{ "$ne": null }`). Utilisez tout de même des requêtes paramétrées.
@@ -56,7 +57,7 @@ conversion dans le repository :
 function toAuthRecord(row) {
   if (!row) return null;
   return {
-    id: String(row.user_id),
+    id: row.user_id, // entier ou chaîne : converti automatiquement
     passwordHash: row.password_digest,
     isActive: row.status === "active" && row.deleted_at === null
   };
@@ -176,7 +177,8 @@ export function createPrismaUserRepository(prisma) {
 ```
 
 `select` limite la lecture aux champs utiles. Si votre `id` est un entier (`Int @id`),
-convertissez-le : `id: String(user.id)` à la lecture et `Number(id)` dans `findById`.
+renvoyez-le tel quel (il est converti en chaîne automatiquement) et convertissez le paramètre
+reçu par `findById` : `where: { id: Number(id) }`.
 
 ### MongoDB avec Mongoose
 
@@ -191,8 +193,9 @@ const userSchema = new mongoose.Schema({
 });
 export const User = mongoose.model("User", userSchema);
 
+// `_id` (ObjectId) est converti en chaîne automatiquement par Express AuthKit.
 function toAuthRecord(doc) {
-  return doc ? { id: doc._id.toString(), passwordHash: doc.passwordHash, isActive: doc.isActive } : null;
+  return doc ? { id: doc._id, passwordHash: doc.passwordHash, isActive: doc.isActive } : null;
 }
 
 /** @returns {import("express-authkit").UserRepository} */

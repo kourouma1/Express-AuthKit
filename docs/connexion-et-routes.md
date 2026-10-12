@@ -1,9 +1,8 @@
 # Connexion des utilisateurs et protection des routes
 
-## Connexion : `auth.login()`
+## Connexion : `expressAuth.login()`
 
-Express AuthKit ne crée pas de route automatiquement : vous gardez le contrôle de l'URL, du
-format de la requête et de la réponse.
+Une ligne suffit. Vous choisissez l'URL : la bibliothèque ne crée aucune route d'elle-même.
 
 ```javascript
 import express from "express";
@@ -14,19 +13,59 @@ const auth = createAuthKit({ users: userRepository, jwt: { /* … */ } });
 const expressAuth = createExpressAuth(auth);
 
 const app = express();
-app.use(express.json({ limit: "10kb" }));
+app.post("/auth/login", express.json({ limit: "10kb" }), loginRateLimiters, expressAuth.login());
+```
 
-app.post("/auth/login", loginRateLimiters, async (req, res, next) => {
+Le client envoie :
+
+```http
+POST /auth/login HTTP/1.1
+Content-Type: application/json
+
+{ "identifier": "alice@example.com", "password": "…" }
+```
+
+et reçoit (avec `Cache-Control: no-store`) :
+
+```json
+{ "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6ImF0K2p3dCJ9…", "tokenType": "Bearer", "expiresIn": 900 }
+```
+
+Votre formulaire utilise `email` ou `username` plutôt que `identifier` ? Indiquez-le :
+
+```javascript
+app.post("/auth/login", express.json(), expressAuth.login({ identifierField: "email" }));
+```
+
+Les erreurs sont gérées par le handler lui-même (pas besoin de `errorHandler()`) :
+
+| Situation | Statut | `error.code` |
+| --- | --- | --- |
+| Corps absent ou non JSON | 400 | `INVALID_INPUT` (le message indique d'envoyer `Content-Type: application/json`) |
+| Champ manquant, vide ou trop long | 400 | `INVALID_INPUT` |
+| Compte inconnu, mot de passe faux ou compte désactivé | 401 | `INVALID_CREDENTIALS` |
+| Erreur inattendue (base indisponible…) | transmise à `next(error)` | — |
+
+> `loginRateLimiters` : voir [limitation des tentatives](securite.md#limitation-des-tentatives-de-connexion).
+> Sans limitation, une route de connexion est exposée aux attaques par force brute.
+
+### Route de connexion personnalisée : `auth.login()`
+
+Pour un format de réponse différent (ajouter le profil, journaliser l'échec…), appelez
+directement `auth.login()` et ajoutez `expressAuth.errorHandler()` après vos routes :
+
+```javascript
+app.post("/auth/login", express.json(), loginRateLimiters, async (req, res, next) => {
   try {
     const result = await auth.login({
-      identifier: req.body?.identifier,
+      identifier: req.body?.email,
       password: req.body?.password
     });
     res.set("Cache-Control", "no-store");
     res.json({
       accessToken: result.accessToken,
-      tokenType: result.tokenType, // "Bearer"
-      expiresIn: result.expiresIn  // en secondes
+      expiresIn: result.expiresIn,
+      user: await db.users.findPublicProfile(result.principal.userId)
     });
   } catch (error) {
     next(error); // traité par expressAuth.errorHandler()
@@ -35,9 +74,6 @@ app.post("/auth/login", loginRateLimiters, async (req, res, next) => {
 
 app.use(expressAuth.errorHandler());
 ```
-
-> `loginRateLimiters` : voir [limitation des tentatives](securite.md#limitation-des-tentatives-de-connexion).
-> Sans limitation, une route de connexion est exposée aux attaques par force brute.
 
 ### Ce que fait `login()`
 

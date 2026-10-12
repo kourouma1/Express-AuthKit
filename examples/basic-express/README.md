@@ -21,7 +21,7 @@ Complétez `.env` :
 
 ```bash
 # Génère le secret JWT
-node -e "console.log(require('node:crypto').randomBytes(48).toString('base64url'))"
+npx express-authkit secret
 ```
 
 - `AUTH_SECRET` : la valeur générée ;

@@ -43,7 +43,15 @@ afin qu'une faute de frappe (`expiresIn` au lieu de `expiresInSeconds`) ne passe
 ### Générer le secret
 
 Le secret doit provenir d'un générateur aléatoire cryptographiquement sûr, **jamais** d'un
-mot ou d'une phrase choisis à la main :
+mot ou d'une phrase choisis à la main. La bibliothèque fournit une commande :
+
+```bash
+npx express-authkit secret
+# ou directement dans le fichier .env :
+echo "AUTH_SECRET=$(npx express-authkit secret)" >> .env
+```
+
+Sans le package installé, la commande équivalente est :
 
 ```bash
 node -e "console.log(require('node:crypto').randomBytes(48).toString('base64url'))"
@@ -132,7 +140,7 @@ const auth = createAuthKit({
 
 | Configuration | Message |
 | --- | --- |
-| `secret` absent | `` `jwt.secret` is required. Generate one with: … `` |
+| `secret` absent | `` `jwt.secret` is required. Generate one with: npx express-authkit secret … `` |
 | `secret: "changeme…"` | `` `jwt.secret` looks like a placeholder value. … `` |
 | `secret` de 20 caractères | `` `jwt.secret` must be at least 32 bytes long for the selected algorithm. … `` |
 | `algorithm: "none"` | `` `jwt.algorithm` must be one of: HS256, HS384, HS512. `` |

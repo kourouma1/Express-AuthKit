@@ -65,11 +65,27 @@ describe("normalizeUserRecord", () => {
     assert.deepEqual(record, { id: "1", passwordHash: "$argon2id$x", isActive: true });
   });
 
+  it("converts integer, bigint and ObjectId identifiers to strings", () => {
+    const base = { passwordHash: "h", isActive: true };
+    const objectId = { toHexString: () => "65f1c0ffee0000000000abcd" };
+    assert.equal(normalizeUserRecord({ ...base, id: 42 }).id, "42");
+    assert.equal(normalizeUserRecord({ ...base, id: 9007199254740993n }).id, "9007199254740993");
+    assert.equal(normalizeUserRecord({ ...base, id: objectId }).id, "65f1c0ffee0000000000abcd");
+  });
+
   it("rejects malformed records explicitly", () => {
     assert.throws(() => normalizeUserRecord("user"), isContractViolation(/must resolve to an object/));
-    assert.throws(() => normalizeUserRecord({ id: 1, passwordHash: "h", isActive: true }), isContractViolation(/`id`/));
-    assert.throws(() => normalizeUserRecord({ id: "1", isActive: true }), isContractViolation(/`passwordHash`/));
-    assert.throws(() => normalizeUserRecord({ id: "1", passwordHash: "h" }), isContractViolation(/`isActive`/));
+    for (const id of [undefined, "", 1.5, Number.NaN, 2 ** 60, {}, { id: 1 }]) {
+      assert.throws(() => normalizeUserRecord({ id, passwordHash: "h", isActive: true }), isContractViolation(/`id`/));
+    }
+    assert.throws(
+      () => normalizeUserRecord({ id: "1", isActive: true }),
+      isContractViolation(/`passwordHash`.*include the password hash field/)
+    );
+    assert.throws(
+      () => normalizeUserRecord({ id: "1", passwordHash: "h" }),
+      isContractViolation(/`isActive`.*return `isActive: true`/)
+    );
     assert.throws(
       () => normalizeUserRecord({ id: "1", passwordHash: "h", isActive: "yes" }),
       isContractViolation(/`isActive`/)

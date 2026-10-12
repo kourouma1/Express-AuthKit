@@ -30,8 +30,15 @@ sous la rubrique **Incompatible**. L'API publique se limite aux exports de
 - `auth.login()` : authentification identifiant / mot de passe avec message d'erreur générique
   et atténuation des écarts de temps de réponse pour les comptes inexistants.
 - `auth.verifyAccessToken()` : contrôle de l'existence et du statut actif de l'utilisateur à chaque requête.
-- Adaptateur Express `createExpressAuth()` : middleware `authenticate()` et `errorHandler()`.
+- Adaptateur Express `createExpressAuth()` : `authenticate()`, `login()` et `errorHandler()`.
 - Contrats `UserRepository`, `PasswordProvider`, `TokenProvider` documentés en JSDoc et vérifiés au démarrage.
 - Erreurs structurées avec codes stables (`AUTH_ERROR_CODES`).
 - Validation de la configuration : secret absent, court ou manifestement faible refusé,
   paramètres Argon2id sous le plancher OWASP refusés, options inconnues refusées.
+- `expressAuth.login(options?)` : handler de connexion prêt à l'emploi
+  (`app.post("/login", express.json(), expressAuth.login())`), avec l'option `identifierField`.
+  Il ne crée aucune route : l'application choisit l'URL.
+- Commande `npx express-authkit secret` pour générer un secret JWT.
+- Les `id` renvoyés par le repository peuvent être des entiers, des `BigInt` ou des `ObjectId`
+  MongoDB : ils sont convertis automatiquement en chaîne.
+- Messages d'erreur du repository qui indiquent comment corriger (`passwordHash`, `isActive`).

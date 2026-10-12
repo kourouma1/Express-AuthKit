@@ -23,7 +23,11 @@
     "./express": "./src/adapters/express/index.js",
     "./package.json": "./package.json"
   },
+  "bin": {
+    "express-authkit": "./bin/express-authkit.js"
+  },
   "files": [
+    "bin/",
     "src/",
     "README.md",
     "CHANGELOG.md",

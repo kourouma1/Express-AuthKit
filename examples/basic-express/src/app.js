@@ -27,18 +27,8 @@ export function createApp({ auth, users, loginRateLimiters = createLoginRateLimi
     res.json({ status: "ok" });
   });
 
-  app.post("/auth/login", ...loginRateLimiters, async (req, res, next) => {
-    try {
-      const result = await auth.login({
-        identifier: req.body?.identifier,
-        password: req.body?.password
-      });
-      res.set("Cache-Control", "no-store");
-      res.json({ accessToken: result.accessToken, tokenType: result.tokenType, expiresIn: result.expiresIn });
-    } catch (error) {
-      next(error);
-    }
-  });
+  // Handler prêt à l'emploi : lit `identifier` et `password` dans le corps JSON.
+  app.post("/auth/login", ...loginRateLimiters, expressAuth.login());
 
   app.get("/me", expressAuth.authenticate(), async (req, res, next) => {
     try {
@@ -48,9 +38,6 @@ export function createApp({ auth, users, loginRateLimiters = createLoginRateLimi
       next(error);
     }
   });
-
-  // Convertit les erreurs d'authentification (login) en réponses JSON 400/401.
-  app.use(expressAuth.errorHandler());
 
   // Filet de sécurité final : aucune information interne n'est renvoyée.
   app.use((error, req, res, _next) => {

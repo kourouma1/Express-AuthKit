@@ -1,4 +1,5 @@
 import { ContractViolationError } from "../errors.js";
+import { contractMissingMethods, contractNotObject } from "../messages.js";
 
 /**
  * Vérifie que `candidate` expose toutes les méthodes de `methodNames`.
@@ -14,13 +15,11 @@ import { ContractViolationError } from "../errors.js";
  */
 export function assertImplements(candidate, contractName, methodNames) {
   if (candidate === null || (typeof candidate !== "object" && typeof candidate !== "function")) {
-    throw new ContractViolationError(`${contractName} must be an object.`);
+    throw new ContractViolationError(contractNotObject(contractName));
   }
 
   const missing = methodNames.filter((name) => typeof candidate[name] !== "function");
   if (missing.length > 0) {
-    throw new ContractViolationError(
-      `${contractName} must implement: ${missing.map((name) => `${name}()`).join(", ")}.`
-    );
+    throw new ContractViolationError(contractMissingMethods(contractName, missing));
   }
 }

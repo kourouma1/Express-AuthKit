@@ -31,13 +31,13 @@ describe("contract assertions", () => {
 
   it("name every missing method", () => {
     assert.throws(() => assertUserRepository({ findById() {} }), isContractViolation(/findByIdentifier\(\)/));
-    assert.throws(() => assertPasswordProvider({}), isContractViolation(/hash\(\), verify\(\)/));
+    assert.throws(() => assertPasswordProvider({}), isContractViolation(/les méthodes suivantes : hash\(\), verify\(\)/));
     assert.throws(() => assertTokenProvider({ issue: "nope", verify() {} }), isContractViolation(/issue\(\)/));
   });
 
   it("reject non-objects", () => {
     for (const value of [null, undefined, 42, "repo"]) {
-      assert.throws(() => assertUserRepository(value), isContractViolation(/must be an object/));
+      assert.throws(() => assertUserRepository(value), isContractViolation(/doit être un objet/));
     }
   });
 
@@ -45,7 +45,7 @@ describe("contract assertions", () => {
     assert.throws(() => createAuthKit({ users: {}, jwt: jwtOptions() }), isContractViolation(/UserRepository/));
     assert.throws(
       () => createAuthKit({ users: createInMemoryUserRepository(), providers: { token: { issue() {} } } }),
-      isContractViolation(/TokenProvider must implement: verify\(\)/)
+      isContractViolation(/TokenProvider doit implémenter la méthode verify\(\)/)
     );
     assert.throws(
       () => createAuthKit({ users: createInMemoryUserRepository(), jwt: jwtOptions(), providers: { password: {} } }),
@@ -74,21 +74,21 @@ describe("normalizeUserRecord", () => {
   });
 
   it("rejects malformed records explicitly", () => {
-    assert.throws(() => normalizeUserRecord("user"), isContractViolation(/must resolve to an object/));
+    assert.throws(() => normalizeUserRecord("user"), isContractViolation(/doit renvoyer un objet, null ou undefined/));
     for (const id of [undefined, "", 1.5, Number.NaN, 2 ** 60, {}, { id: 1 }]) {
-      assert.throws(() => normalizeUserRecord({ id, passwordHash: "h", isActive: true }), isContractViolation(/`id`/));
+      assert.throws(() => normalizeUserRecord({ id, passwordHash: "h", isActive: true }), isContractViolation(/« id »/));
     }
     assert.throws(
       () => normalizeUserRecord({ id: "1", isActive: true }),
-      isContractViolation(/`passwordHash`.*include the password hash field/)
+      isContractViolation(/« passwordHash ».*ajoutez celui du hash/)
     );
     assert.throws(
       () => normalizeUserRecord({ id: "1", passwordHash: "h" }),
-      isContractViolation(/`isActive`.*return `isActive: true`/)
+      isContractViolation(/« isActive ».*renvoyez « isActive: true »/)
     );
     assert.throws(
       () => normalizeUserRecord({ id: "1", passwordHash: "h", isActive: "yes" }),
-      isContractViolation(/`isActive`/)
+      isContractViolation(/« isActive »/)
     );
   });
 });

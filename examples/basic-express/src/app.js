@@ -39,15 +39,16 @@ export function createApp({ auth, users, loginRateLimiters = createLoginRateLimi
     }
   });
 
-  // Filet de sécurité final : aucune information interne n'est renvoyée.
+  // Erreurs du client (JSON invalide, corps trop gros…) : réponses JSON propres en français.
+  app.use(expressAuth.errorHandler());
+
+  // Filet de sécurité final : on journalise côté serveur, sans rien révéler au client.
   app.use((error, req, res, _next) => {
-    if (error.type === "entity.parse.failed" || error.type === "entity.too.large") {
-      res.status(error.status).json({ error: { code: "INVALID_REQUEST", message: "Invalid request body." } });
-      return;
-    }
-    // Journalisez ici avec votre logger (sans corps de requête ni en-tête Authorization).
-    console.error(`[${new Date().toISOString()}] ${req.method} ${req.path} failed: ${error.name} ${error.code ?? ""}`);
-    res.status(500).json({ error: { code: "INTERNAL_ERROR", message: "Internal server error." } });
+    // Ni corps de requête, ni en-tête Authorization dans les journaux.
+    // Pour une DependencyFailureError, error.dependency indique quel appel a échoué.
+    const origin = error.dependency ? ` (${error.dependency})` : "";
+    console.error(`[${new Date().toISOString()}] ${req.method} ${req.path} : ${error.name} ${error.code ?? ""}${origin}`);
+    res.status(500).json({ error: { code: "INTERNAL_ERROR", message: "Erreur interne du serveur." } });
   });
 
   return app;

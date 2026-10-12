@@ -41,4 +41,15 @@ sous la rubrique **Incompatible**. L'API publique se limite aux exports de
 - Commande `npx express-authkit secret` pour générer un secret JWT.
 - Les `id` renvoyés par le repository peuvent être des entiers, des `BigInt` ou des `ObjectId`
   MongoDB : ils sont convertis automatiquement en chaîne.
-- Messages d'erreur du repository qui indiquent comment corriger (`passwordHash`, `isActive`).
+- Tous les messages d'erreur sont en français, centralisés dans un seul module, et indiquent
+  comment corriger le problème. Les codes d'erreur restent stables (en anglais).
+- `DependencyFailureError` (`DEPENDENCY_FAILURE`) : toute panne d'un repository ou d'un provider
+  est enveloppée, avec `dependency` (l'appel qui a échoué) et `cause` (l'erreur d'origine).
+- `AuthKitError#toJSON()` : sérialisation sûre `{ name, code, message }`, sans pile ni cause.
+- `expressAuth.errorHandler()` convertit aussi les erreurs du parseur `express.json()`
+  (JSON mal formé → 400, corps trop volumineux → 413) en réponses JSON.
+- Oublier les parenthèses (`expressAuth.authenticate` au lieu de `expressAuth.authenticate()`)
+  lève une `ConfigurationError` explicite au lieu de bloquer la requête.
+- `expressAuth.login({ identifierField })` cite le vrai nom du champ dans ses messages.
+- `TokenProvider.issue()` est vérifié : un provider personnalisé qui renvoie un jeton mal formé
+  lève une `ContractViolationError`.

@@ -1,4 +1,5 @@
 import { ConfigurationError } from "../core/errors.js";
+import { DEVELOPER_MESSAGES } from "../core/messages.js";
 import { assertKnownKeys, assertPlainObject } from "./assertions.js";
 
 /**
@@ -33,11 +34,11 @@ const ALLOWED_PROVIDER_KEYS = Object.freeze(["password", "token"]);
  * @throws {ConfigurationError}
  */
 export function validateAuthKitOptions(options) {
-  assertPlainObject(options, "options");
-  assertKnownKeys(options, ALLOWED_KEYS, "options");
+  assertPlainObject(options, "createAuthKit(options)");
+  assertKnownKeys(options, ALLOWED_KEYS, "createAuthKit(options)");
 
   if (options.users === undefined || options.users === null) {
-    throw new ConfigurationError("`users` is required: pass an object implementing findByIdentifier() and findById().");
+    throw new ConfigurationError(DEVELOPER_MESSAGES.usersRequired);
   }
 
   const providers = options.providers ?? {};
@@ -45,13 +46,13 @@ export function validateAuthKitOptions(options) {
   assertKnownKeys(providers, ALLOWED_PROVIDER_KEYS, "providers");
 
   if (providers.token !== undefined && options.jwt !== undefined) {
-    throw new ConfigurationError("Use either `jwt` options or `providers.token`, not both.");
+    throw new ConfigurationError(DEVELOPER_MESSAGES.jwtOrTokenProvider);
   }
   if (providers.token === undefined && options.jwt === undefined) {
-    throw new ConfigurationError("`jwt` options are required (secret, issuer, audience).");
+    throw new ConfigurationError(DEVELOPER_MESSAGES.jwtRequired);
   }
   if (providers.password !== undefined && options.password !== undefined) {
-    throw new ConfigurationError("Use either `password` options or `providers.password`, not both.");
+    throw new ConfigurationError(DEVELOPER_MESSAGES.passwordOrPasswordProvider);
   }
 
   return /** @type {AuthKitOptions} */ (options);

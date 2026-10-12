@@ -110,15 +110,19 @@ app.get("/profile", expressAuth.authenticate(), (req, res) => {
   res.json({ userId: req.auth.userId });
 });
 
+// 5. Des réponses JSON claires, en français, si le client envoie un JSON invalide.
+app.use(expressAuth.errorHandler());
+
 app.listen(3000, () => console.log("API sur http://localhost:3000"));
 ```
 
-Ce que fait ce fichier, en quatre points :
+Ce que fait ce fichier, en cinq points :
 
 1. **`userRepository`** explique à la bibliothèque comment trouver un utilisateur : par son e-mail (à la connexion) et par son identifiant (à chaque requête).
 2. **`createAuthKit()`** crée le moteur. Si le secret manque ou est trop faible, l'application refuse de démarrer et vous explique pourquoi.
 3. **`auth.password.hash()`** transforme le mot de passe en empreinte avant de l'enregistrer.
 4. **`expressAuth.login()`** crée la route de connexion, et **`expressAuth.authenticate()`** protège `/profile`. Dans la route protégée, `req.auth.userId` contient l'identifiant de l'utilisateur connecté.
+5. **`expressAuth.errorHandler()`** transforme les erreurs (JSON mal formé, par exemple) en réponses JSON claires, avec des messages en français.
 
 **Étape 4 — Lancez et testez**
 

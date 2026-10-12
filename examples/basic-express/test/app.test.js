@@ -78,7 +78,7 @@ describe("example application", () => {
       body: "{not json"
     });
     assert.equal(response.status, 400);
-    assert.deepEqual(await response.json(), { error: { code: "INVALID_REQUEST", message: "Invalid request body." } });
+    assert.deepEqual(await response.json(), { error: { code: "INVALID_INPUT", message: "Le corps de la requête n’est pas un JSON valide." } });
   });
 
   it("rate-limits repeated failures on the same identifier", async () => {

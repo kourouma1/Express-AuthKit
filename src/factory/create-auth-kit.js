@@ -1,5 +1,6 @@
 import { validateAuthKitOptions } from "../config/auth-kit-options.js";
 import { createAuthenticationService } from "../core/authentication-service.js";
+import { callDependency } from "../core/errors.js";
 import { assertPasswordProvider } from "../core/contracts/password-provider.js";
 import { assertTokenProvider } from "../core/contracts/token-provider.js";
 import { assertUserRepository } from "../core/contracts/user-repository.js";
@@ -61,8 +62,9 @@ export function createAuthKit(options) {
     login: service.login,
     verifyAccessToken: service.verifyAccessToken,
     password: Object.freeze({
-      hash: (plainPassword) => passwordProvider.hash(plainPassword),
-      verify: (plainPassword, passwordHash) => passwordProvider.verify(plainPassword, passwordHash)
+      hash: (plainPassword) => callDependency("PasswordProvider.hash", () => passwordProvider.hash(plainPassword)),
+      verify: (plainPassword, passwordHash) =>
+        callDependency("PasswordProvider.verify", () => passwordProvider.verify(plainPassword, passwordHash))
     })
   });
 }

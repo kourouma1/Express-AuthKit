@@ -6,9 +6,11 @@ import {
   InvalidCredentialsError,
   InvalidInputError,
   InvalidTokenError,
-  TokenMissingError
+  TokenMissingError,
+  callDependency
 } from "./errors.js";
 import { MAX_IDENTIFIER_LENGTH, MAX_PASSWORD_LENGTH, MAX_TOKEN_LENGTH } from "./input-limits.js";
+import { DEVELOPER_MESSAGES, PUBLIC_MESSAGES, fieldRequired, fieldTooLong } from "./messages.js";
 
 /**
  * @typedef {import("./contracts/user-repository.js").UserRepository} UserRepository
@@ -36,6 +38,17 @@ import { MAX_IDENTIFIER_LENGTH, MAX_PASSWORD_LENGTH, MAX_TOKEN_LENGTH } from "./
 export function createAuthenticationService({ users, passwordProvider, tokenProvider }) {
   const getDummyHash = createDummyHashSource(passwordProvider);
 
+  // Chaque appel à une dépendance injectée est enveloppé : une panne (base de
+  // données indisponible, bug d’un provider) devient une DependencyFailureError
+  // avec un code stable, l’erreur d’origine restant disponible dans `cause`.
+  const findUserByIdentifier = (identifier) =>
+    callDependency("UserRepository.findByIdentifier", () => users.findByIdentifier(identifier));
+  const findUserById = (id) => callDependency("UserRepository.findById", () => users.findById(id));
+  const verifyPassword = (password, hash) =>
+    callDependency("PasswordProvider.verify", () => passwordProvider.verify(password, hash));
+  const issueToken = (subject) => callDependency("TokenProvider.issue", () => tokenProvider.issue({ subject }));
+  const verifyToken = (token) => callDependency("TokenProvider.verify", () => tokenProvider.verify(token));
+
   /**
    * @param {LoginCredentials} credentials
    * @returns {Promise<LoginResult>}
@@ -43,18 +56,18 @@ export function createAuthenticationService({ users, passwordProvider, tokenProv
   async function login(credentials) {
     const { identifier, password } = validateCredentials(credentials);
 
-    const user = normalizeUserRecord(await users.findByIdentifier(identifier));
+    const user = normalizeUserRecord(await findUserByIdentifier(identifier));
 
     if (user === null) {
       // Réduit les fuites de temps : vérifie aussi un faux hash pour que les
       // comptes inconnus coûtent autant qu’un compte existant.
-      await passwordProvider.verify(password, await getDummyHash());
+      await verifyPassword(password, await getDummyHash());
       throw new InvalidCredentialsError(AUTH_FAILURE_REASONS.USER_NOT_FOUND);
     }
 
     // Vérifie volontairement le mot de passe avant le statut du compte :
     // un compte désactivé prend alors le même temps qu’un compte actif.
-    const passwordMatches = await passwordProvider.verify(password, user.passwordHash);
+    const passwordMatches = await verifyPassword(password, user.passwordHash);
     if (passwordMatches !== true) {
       throw new InvalidCredentialsError(AUTH_FAILURE_REASONS.INVALID_PASSWORD);
     }
@@ -62,7 +75,7 @@ export function createAuthenticationService({ users, passwordProvider, tokenProv
       throw new InvalidCredentialsError(AUTH_FAILURE_REASONS.ACCOUNT_DISABLED);
     }
 
-    const issued = await tokenProvider.issue({ subject: user.id });
+    const issued = assertIssuedToken(await issueToken(user.id));
     return {
       accessToken: issued.token,
       tokenType: "Bearer",
@@ -83,19 +96,19 @@ export function createAuthenticationService({ users, passwordProvider, tokenProv
       throw new InvalidTokenError();
     }
 
-    const claims = await tokenProvider.verify(token);
+    const claims = await verifyToken(token);
     if (typeof claims?.subject !== "string" || claims.subject.length === 0) {
-      throw new ContractViolationError("TokenProvider.verify() must resolve to claims with a non-empty `subject`.");
+      throw new ContractViolationError(DEVELOPER_MESSAGES.tokenClaimsWithoutSubject);
     }
 
     // Vérifier l’utilisateur à chaque requête bloque immédiatement les
     // comptes supprimés ou désactivés, ce qu’un JWT seul ne peut pas faire.
-    const user = normalizeUserRecord(await users.findById(claims.subject));
+    const user = normalizeUserRecord(await findUserById(claims.subject));
     if (user === null) {
       throw new InvalidTokenError({ reason: AUTH_FAILURE_REASONS.USER_NOT_FOUND });
     }
     if (user.id !== claims.subject) {
-      throw new ContractViolationError("UserRepository.findById() returned a user with a different `id`.");
+      throw new ContractViolationError(DEVELOPER_MESSAGES.repositoryIdMismatch);
     }
     if (user.isActive !== true) {
       throw new InvalidTokenError({ reason: AUTH_FAILURE_REASONS.ACCOUNT_DISABLED });
@@ -108,13 +121,34 @@ export function createAuthenticationService({ users, passwordProvider, tokenProv
 }
 
 /**
+ * Vérifie la forme du jeton renvoyé par un TokenProvider (utile surtout pour
+ * les providers personnalisés).
+ *
+ * @param {unknown} issued
+ * @returns {import("./contracts/token-provider.js").IssuedToken}
+ * @throws {ContractViolationError}
+ */
+function assertIssuedToken(issued) {
+  const isValid =
+    typeof issued?.token === "string" &&
+    issued.token.length > 0 &&
+    typeof issued.tokenId === "string" &&
+    Number.isFinite(issued.issuedAt) &&
+    Number.isFinite(issued.expiresAt);
+  if (!isValid) {
+    throw new ContractViolationError(DEVELOPER_MESSAGES.issuedTokenInvalid);
+  }
+  return issued;
+}
+
+/**
  * @param {unknown} credentials
  * @returns {LoginCredentials}
  * @throws {InvalidInputError}
  */
 function validateCredentials(credentials) {
   if (credentials === null || typeof credentials !== "object") {
-    throw new InvalidInputError("Credentials must be an object with `identifier` and `password`.");
+    throw new InvalidInputError(PUBLIC_MESSAGES.credentialsNotObject);
   }
   const { identifier, password } = /** @type {Record<string, unknown>} */ (credentials);
   assertBoundedString(identifier, "identifier", MAX_IDENTIFIER_LENGTH);
@@ -130,10 +164,10 @@ function validateCredentials(credentials) {
  */
 function assertBoundedString(value, field, maxLength) {
   if (typeof value !== "string" || value.length === 0) {
-    throw new InvalidInputError(`\`${field}\` must be a non-empty string.`);
+    throw new InvalidInputError(fieldRequired(field));
   }
   if (value.length > maxLength) {
-    throw new InvalidInputError(`\`${field}\` must not exceed ${maxLength} characters.`);
+    throw new InvalidInputError(fieldTooLong(field, maxLength));
   }
 }
 
@@ -149,7 +183,9 @@ function createDummyHashSource(passwordProvider) {
   /** @type {Promise<string> | undefined} */
   let pending;
   return () => {
-    pending ??= passwordProvider.hash(globalThis.crypto.randomUUID()).catch((error) => {
+    pending ??= callDependency("PasswordProvider.hash", () =>
+      passwordProvider.hash(globalThis.crypto.randomUUID())
+    ).catch((error) => {
       pending = undefined;
       throw error;
     });

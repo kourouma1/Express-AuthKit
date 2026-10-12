@@ -9,7 +9,7 @@ Le `code` de l'erreur (`INVALID_CREDENTIALS`, `TOKEN_MISSING`…) est dans la r�
 
 ## Au démarrage
 
-### ``ConfigurationError: `jwt.secret` is required.``
+### « L’option « jwt.secret » est obligatoire »
 
 - **Cause probable** : `process.env.AUTH_SECRET` est vide. Le fichier `.env` n'est pas chargé.
 - **Solution** : chargez le fichier `.env` au lancement :
@@ -20,7 +20,7 @@ Le `code` de l'erreur (`INVALID_CREDENTIALS`, `TOKEN_MISSING`…) est dans la r�
 
   Ou définissez la variable dans votre environnement d'exécution (Docker, systemd, CI…).
 
-### `` `jwt.secret` must be at least 32 bytes long `` / `looks like a placeholder value` / `is too repetitive`
+### « jwt.secret » : « doit contenir au moins 32 octets », « ressemble à une valeur d’exemple » ou « trop répétitive »
 
 - **Cause probable** : le secret est trop court, ou ressemble à une valeur d'exemple copiée
   d'un tutoriel.
@@ -32,20 +32,20 @@ Le `code` de l'erreur (`INVALID_CREDENTIALS`, `TOKEN_MISSING`…) est dans la r�
 
   Avec `HS384`, il faut au moins 48 octets. Avec `HS512`, au moins 64.
 
-### ``Unknown option(s) in `jwt`: expiresIn``
+### « Option inconnue dans « jwt » : expiresIn »
 
 - **Cause probable** : le nom de l'option est faux.
 - **Solution** : utilisez `expiresInSeconds`, avec un nombre entier (`900`, pas `"15m"`).
   Le message affiche la liste des options autorisées.
 
-### `ContractViolationError: UserRepository must implement: findById().`
+### « UserRepository doit implémenter la méthode findById() »
 
 - **Cause probable** : votre objet `users` n'a pas les deux méthodes `findByIdentifier()` et
   `findById()`.
 - **Solution** : ajoutez la méthode manquante. Si vous utilisez une classe, passez une
   **instance** (`new UserRepository()`), pas la classe elle-même.
 
-### ``Use either `jwt` options or `providers.token`, not both.``
+### « Utilisez soit l’option « jwt », soit « providers.token », mais pas les deux »
 
 - **Cause probable** : vous utilisez un provider de token personnalisé **et** l'option `jwt`.
 - **Solution** : supprimez l'option `jwt`.
@@ -94,7 +94,7 @@ Le `code` de l'erreur (`INVALID_CREDENTIALS`, `TOKEN_MISSING`…) est dans la r�
      (`USER_NOT_FOUND`, `INVALID_PASSWORD`, `ACCOUNT_DISABLED`). Ne l'envoyez jamais au client
      (voir [erreurs](erreurs.md#journaliser-les-échecs-de-connexion)).
 
-### `400 INVALID_INPUT` : `Request body must be a JSON object…`
+### `400 INVALID_INPUT` : « Le corps de la requête doit être un objet JSON… »
 
 - **Cause probable** : le serveur n'a pas lu le corps de la requête.
 - **Solution** : vérifiez les deux côtés :
@@ -102,7 +102,7 @@ Le `code` de l'erreur (`INVALID_CREDENTIALS`, `TOKEN_MISSING`…) est dans la r�
      (`app.post("/login", express.json(), expressAuth.login())`).
   2. Client : il doit envoyer l'en-tête `Content-Type: application/json`.
 
-### `400 INVALID_INPUT` : `` `identifier` must be a non-empty string ``
+### `400 INVALID_INPUT` : « Le champ « identifier » est obligatoire… »
 
 - **Cause probable** : le champ attendu est absent du corps JSON. Par défaut, ce champ
   s'appelle `identifier`.
@@ -136,6 +136,24 @@ Le `code` de l'erreur (`INVALID_CREDENTIALS`, `TOKEN_MISSING`…) est dans la r�
   accepté (`{ memoryCost: 19456, timeCost: 2, parallelism: 1 }`).
 
 ## Sur les routes protégées
+
+### « expressAuth.authenticate doit être appelé avec des parenthèses »
+
+- **Cause probable** : vous avez écrit `expressAuth.authenticate` au lieu de
+  `expressAuth.authenticate()` (idem pour `login` et `errorHandler`).
+- **Solution** : ajoutez les parenthèses :
+
+  ```javascript
+  app.get("/profile", expressAuth.authenticate(), handler);
+  ```
+
+### Erreur 500 avec le code `DEPENDENCY_FAILURE`
+
+- **Cause probable** : votre repository (ou un provider) a levé une erreur : base de données
+  indisponible, requête SQL incorrecte, bug…
+- **Solution** : regardez `error.dependency` (quel appel a échoué) et `error.cause` (l'erreur
+  d'origine) dans les journaux de votre serveur.
+
 
 ### `401 TOKEN_MISSING` alors que le token est envoyé
 

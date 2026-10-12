@@ -9,9 +9,17 @@
 
 import { assertImplements } from "../../core/contracts/assert-contract.js";
 import { ConfigurationError, InvalidInputError } from "../../core/errors.js";
+import { MAX_IDENTIFIER_LENGTH } from "../../core/input-limits.js";
+import {
+  DEVELOPER_MESSAGES,
+  PUBLIC_MESSAGES,
+  fieldRequired,
+  fieldTooLong,
+  middlewareFactoryMisuse
+} from "../../core/messages.js";
 import { assertKnownKeys, assertPlainObject } from "../../config/assertions.js";
 import { extractBearerToken } from "./bearer-token.js";
-import { getClientErrorStatus, sendClientError } from "./http-errors.js";
+import { getClientErrorStatus, resolveClientError, sendClientError } from "./http-errors.js";
 
 /**
  * @typedef {object} ExpressAuthOptions
@@ -36,8 +44,6 @@ const DEFAULT_REALM = "api";
 const REALM_PATTERN = /^[A-Za-z0-9 ._-]{1,64}$/;
 const DEFAULT_IDENTIFIER_FIELD = "identifier";
 const FIELD_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
-const MISSING_JSON_BODY_MESSAGE =
-  "Request body must be a JSON object: send `Content-Type: application/json` (and use express.json() on the server).";
 
 /**
  * Crée l’intégration Express pour un moteur construit avec `createAuthKit()`.
@@ -55,12 +61,12 @@ const MISSING_JSON_BODY_MESSAGE =
  */
 export function createExpressAuth(auth, options = {}) {
   assertImplements(auth, "AuthKit", ["login", "verifyAccessToken"]);
-  assertPlainObject(options, "options");
-  assertKnownKeys(options, ["realm"], "options");
+  assertPlainObject(options, "createExpressAuth(auth, options)");
+  assertKnownKeys(options, ["realm"], "createExpressAuth(auth, options)");
 
   const realm = options.realm ?? DEFAULT_REALM;
   if (typeof realm !== "string" || !REALM_PATTERN.test(realm)) {
-    throw new ConfigurationError("`realm` must contain 1 to 64 letters, digits, spaces, dots, dashes or underscores.");
+    throw new ConfigurationError(DEVELOPER_MESSAGES.invalidRealm);
   }
 
   /**
@@ -71,7 +77,8 @@ export function createExpressAuth(auth, options = {}) {
    *
    * @returns {import("express").RequestHandler}
    */
-  function authenticate() {
+  function authenticate(...unexpectedArguments) {
+    assertCalledAsFactory("authenticate", unexpectedArguments);
     return async function authenticateRequest(req, res, next) {
       let principal;
       try {
@@ -107,7 +114,8 @@ export function createExpressAuth(auth, options = {}) {
    * @param {LoginHandlerOptions} [loginOptions]
    * @returns {import("express").RequestHandler}
    */
-  function login(loginOptions = {}) {
+  function login(loginOptions = {}, ...unexpectedArguments) {
+    assertCalledAsFactory("login", unexpectedArguments);
     const identifierField = resolveIdentifierField(loginOptions);
 
     return async function loginRequest(req, res, next) {
@@ -115,13 +123,14 @@ export function createExpressAuth(auth, options = {}) {
       try {
         const body = req.body;
         if (body === undefined || body === null || typeof body !== "object") {
-          throw new InvalidInputError(MISSING_JSON_BODY_MESSAGE);
+          throw new InvalidInputError(PUBLIC_MESSAGES.missingJsonBody);
         }
-        result = await auth.login({
-          // Object.hasOwn évite de lire une propriété héritée du prototype.
-          identifier: Object.hasOwn(body, identifierField) ? body[identifierField] : undefined,
-          password: Object.hasOwn(body, "password") ? body.password : undefined
-        });
+        // Object.hasOwn évite de lire une propriété héritée du prototype.
+        const identifier = Object.hasOwn(body, identifierField) ? body[identifierField] : undefined;
+        const password = Object.hasOwn(body, "password") ? body.password : undefined;
+        // Vérifié ici pour que le message cite le vrai nom du champ (« email »…).
+        assertIdentifierField(identifier, identifierField);
+        result = await auth.login({ identifier, password });
       } catch (error) {
         const status = getClientErrorStatus(error);
         if (status !== undefined) {
@@ -143,14 +152,15 @@ export function createExpressAuth(auth, options = {}) {
    *
    * @returns {import("express").ErrorRequestHandler}
    */
-  function errorHandler() {
+  function errorHandler(...unexpectedArguments) {
+    assertCalledAsFactory("errorHandler", unexpectedArguments);
     return function authErrorHandler(error, req, res, next) {
-      const status = getClientErrorStatus(error);
-      if (status === undefined || res.headersSent) {
+      const clientError = resolveClientError(error);
+      if (clientError === undefined || res.headersSent) {
         next(error);
         return;
       }
-      sendClientError(res, error, status, realm);
+      sendClientError(res, clientError.error, clientError.status, realm);
     };
   }
 
@@ -162,11 +172,38 @@ export function createExpressAuth(auth, options = {}) {
  * @returns {string}
  */
 function resolveIdentifierField(loginOptions) {
-  assertPlainObject(loginOptions, "login options");
-  assertKnownKeys(loginOptions, ["identifierField"], "login options");
+  assertPlainObject(loginOptions, "expressAuth.login(options)");
+  assertKnownKeys(loginOptions, ["identifierField"], "expressAuth.login(options)");
   const field = loginOptions.identifierField ?? DEFAULT_IDENTIFIER_FIELD;
   if (typeof field !== "string" || !FIELD_NAME_PATTERN.test(field)) {
-    throw new ConfigurationError("`identifierField` must be a simple field name such as \"email\" or \"username\".");
+    throw new ConfigurationError(DEVELOPER_MESSAGES.invalidIdentifierField);
   }
   return field;
+}
+
+/**
+ * Détecte l’oubli des parenthèses (`expressAuth.authenticate` au lieu de
+ * `expressAuth.authenticate()`). Sans ce contrôle, Express appellerait la
+ * fabrique comme un middleware et la requête resterait bloquée sans réponse.
+ *
+ * @param {string} method
+ * @param {unknown[]} unexpectedArguments
+ */
+function assertCalledAsFactory(method, unexpectedArguments) {
+  if (unexpectedArguments.length > 0) {
+    throw new ConfigurationError(middlewareFactoryMisuse(method));
+  }
+}
+
+/**
+ * @param {unknown} identifier
+ * @param {string} field
+ */
+function assertIdentifierField(identifier, field) {
+  if (typeof identifier !== "string" || identifier.length === 0) {
+    throw new InvalidInputError(fieldRequired(field));
+  }
+  if (identifier.length > MAX_IDENTIFIER_LENGTH) {
+    throw new InvalidInputError(fieldTooLong(field, MAX_IDENTIFIER_LENGTH));
+  }
 }

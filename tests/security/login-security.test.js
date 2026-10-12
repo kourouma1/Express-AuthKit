@@ -111,6 +111,25 @@ describe("login security", () => {
     assert.equal((await auth.verifyAccessToken(accessToken)).userId, "42");
   });
 
+  it("wraps unexpected password provider failures in auth.password helpers", async () => {
+    const auth = createAuthKit({
+      users: createInMemoryUserRepository(),
+      jwt: jwtOptions(),
+      providers: {
+        password: {
+          hash: async () => {
+            throw new Error("out of memory");
+          },
+          verify: async () => {
+            throw new Error("out of memory");
+          }
+        }
+      }
+    });
+    await assert.rejects(auth.password.hash("x"), (error) => error.code === "DEPENDENCY_FAILURE" && error.dependency === "PasswordProvider.hash");
+    await assert.rejects(auth.password.verify("x", "h"), (error) => error.code === "DEPENDENCY_FAILURE");
+  });
+
   it("surfaces unreadable stored hashes as server errors, not as wrong passwords", async () => {
     const repository = createInMemoryUserRepository([
       { id: "legacy", email: "legacy@example.test", passwordHash: "$2b$10$legacybcrypthash", isActive: true }

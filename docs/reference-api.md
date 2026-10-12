@@ -89,7 +89,8 @@ Résultat (`LoginResult`) :
   Le message est volontairement le même dans les trois cas.
 - `InvalidPasswordHashError` : le hash stocké en base est illisible par le provider.
 - `ContractViolationError` : le repository a renvoyé un utilisateur mal formé.
-- Les erreurs de votre repository (base indisponible, etc.) sont transmises telles quelles.
+- `DependencyFailureError` : votre repository ou un provider a planté (base indisponible…).
+  L'erreur d'origine est dans `error.cause`.
 
 #### `auth.verifyAccessToken(token)` → `Promise<AuthPrincipal>`
 
@@ -108,7 +109,7 @@ console.log(principal.userId);
   utilisateur supprimé ou désactivé.
 - `TokenExpiredError` : token correctement signé mais expiré.
 - `ContractViolationError` : le provider ou le repository ne respecte pas son contrat.
-- Les erreurs de votre repository sont transmises telles quelles.
+- `DependencyFailureError` : votre repository ou le provider de token a planté.
 
 #### `auth.password.hash(password)` → `Promise<string>`
 
@@ -119,7 +120,8 @@ Avec le provider par défaut, renvoie un hash Argon2id (`$argon2id$v=19$…`).
 const passwordHash = await auth.password.hash(req.body.password);
 ```
 
-**Erreur** : `InvalidInputError` (mot de passe vide, pas une chaîne ou de plus de 1 024 caractères).
+**Erreurs** : `InvalidInputError` (mot de passe vide, pas une chaîne ou de plus de 1 024 caractères),
+`DependencyFailureError` (le provider a planté de façon inattendue).
 
 #### `auth.password.verify(password, hash)` → `Promise<boolean>`
 
@@ -130,7 +132,7 @@ const ok = await auth.password.verify(req.body.currentPassword, user.passwordHas
 ```
 
 **Erreurs** : `InvalidInputError`, `InvalidPasswordHashError` (hash illisible ; avec le
-provider par défaut, tout hash qui n'est pas Argon2id).
+provider par défaut, tout hash qui n'est pas Argon2id), `DependencyFailureError`.
 
 ### `AuthPrincipal`
 
@@ -220,7 +222,7 @@ try {
 
 | Export | Code | Quand ? |
 | --- | --- | --- |
-| `AuthKitError` | — | Classe de base. Propriétés : `name`, `code`, `message`, `cause` éventuelle. |
+| `AuthKitError` | — | Classe de base. Propriétés : `name`, `code`, `message`, `cause` éventuelle. `toJSON()` renvoie `{ name, code, message }` (sans pile ni cause). |
 | `InvalidCredentialsError` | `INVALID_CREDENTIALS` | Connexion refusée. Propriété cachée `reason` (voir ci-dessous). |
 | `InvalidInputError` | `INVALID_INPUT` | Donnée de mauvais type, vide ou trop longue. |
 | `TokenMissingError` | `TOKEN_MISSING` | Aucun token fourni. |
@@ -229,6 +231,9 @@ try {
 | `ConfigurationError` | `INVALID_CONFIGURATION` | Configuration manquante ou non sûre, au démarrage. |
 | `ContractViolationError` | `CONTRACT_VIOLATION` | Un objet injecté ne respecte pas son contrat. |
 | `InvalidPasswordHashError` | `INVALID_PASSWORD_HASH` | Hash stocké illisible. |
+| `DependencyFailureError` | `DEPENDENCY_FAILURE` | Un repository ou un provider a planté. Propriétés : `dependency` (par exemple `"UserRepository.findById"`) et `cause` (l'erreur d'origine). |
+
+Tous les messages sont rédigés en français.
 
 Autres exports :
 
@@ -270,6 +275,10 @@ app.use(expressAuth.errorHandler());
 - `ContractViolationError` : `auth` n'a pas `login()` et `verifyAccessToken()`.
 - `ConfigurationError` : option inconnue ou `realm` invalide.
 
+> **N'oubliez pas les parenthèses** : écrivez `expressAuth.authenticate()`, `expressAuth.login()`
+> et `expressAuth.errorHandler()`. Sans parenthèses, la bibliothèque lève une
+> `ConfigurationError` qui vous l'indique, au lieu de laisser la requête bloquée.
+
 #### `expressAuth.authenticate()` → middleware
 
 Protège une route : seules les requêtes avec un token valide passent.
@@ -306,11 +315,14 @@ pas un nom de champ simple ou si une option est inconnue.
 #### `expressAuth.errorHandler()` → middleware d'erreur
 
 Convertit en réponse JSON les erreurs d'authentification levées dans **vos** routes (par
-exemple si vous appelez `auth.login()` vous-même).
+exemple si vous appelez `auth.login()` vous-même), ainsi que les erreurs du parseur
+`express.json()`.
 
-| Code | Statut HTTP |
+| Erreur | Statut HTTP |
 | --- | --- |
 | `INVALID_INPUT` | 400 |
+| JSON mal formé (parseur `express.json()`) | 400, code `INVALID_INPUT` |
+| Corps trop volumineux (parseur `express.json()`) | 413, code `INVALID_INPUT` |
 | `INVALID_CREDENTIALS`, `TOKEN_MISSING`, `TOKEN_INVALID`, `TOKEN_EXPIRED` | 401 |
 
 Toute autre erreur est transmise avec `next(error)`. C'est aussi le cas si la réponse a déjà

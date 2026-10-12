@@ -8,12 +8,13 @@ import { randomBytes } from "node:crypto";
 
 const SECRET_BYTES = 48;
 
-const USAGE = `Usage: express-authkit <command>
+const USAGE = `Utilisation : express-authkit <commande>
 
-Commands:
-  secret    Print a random JWT secret (${SECRET_BYTES} bytes, base64url) for AUTH_SECRET.
+Commandes :
+  secret    Affiche un secret JWT aléatoire (${SECRET_BYTES} octets, base64url) pour AUTH_SECRET.
+  help      Affiche cette aide.
 
-Example:
+Exemple :
   echo "AUTH_SECRET=$(npx express-authkit secret)" >> .env
 `;
 
@@ -24,6 +25,6 @@ if (command === "secret") {
 } else if (command === undefined || command === "help" || command === "--help" || command === "-h") {
   process.stdout.write(USAGE);
 } else {
-  process.stderr.write(`Unknown command: ${command}\n\n${USAGE}`);
+  process.stderr.write(`Commande inconnue : ${command}\n\n${USAGE}`);
   process.exitCode = 1;
 }

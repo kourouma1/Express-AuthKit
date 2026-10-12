@@ -36,7 +36,7 @@ app.post("/register", async (req, res, next) => {
   try {
     const { email, password } = req.body ?? {};
     if (typeof email !== "string" || typeof password !== "string" || password.length < MIN_PASSWORD_LENGTH) {
-      throw new InvalidInputError(`Password must contain at least ${MIN_PASSWORD_LENGTH} characters.`);
+      throw new InvalidInputError(`Le mot de passe doit contenir au moins ${MIN_PASSWORD_LENGTH} caractères.`);
     }
 
     const passwordHash = await auth.password.hash(password);

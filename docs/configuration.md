@@ -160,13 +160,13 @@ const auth = createAuthKit({
 
 | Configuration | Message |
 | --- | --- |
-| `secret` absent | `` `jwt.secret` is required. Generate one with: npx express-authkit secret … `` |
-| `secret: "changeme…"` | `` `jwt.secret` looks like a placeholder value. … `` |
-| `secret` de 20 caractères | `` `jwt.secret` must be at least 32 bytes long for the selected algorithm. … `` |
-| `algorithm: "none"` | `` `jwt.algorithm` must be one of: HS256, HS384, HS512. `` |
-| `expiresInSeconds: 604800` | `` `jwt.expiresInSeconds` must be an integer between 30 and 86400. `` |
-| `password: { memoryCost: 4096 }` | `` `password.memoryCost` must be an integer between 19456 and 4194304. `` |
-| `jwt: { expiresIn: "1h", … }` | `` Unknown option(s) in `jwt`: expiresIn. Allowed: … `` |
+| `secret` absent | « L’option « jwt.secret » est obligatoire. Générez-en un avec : npx express-authkit secret … » |
+| `secret: "changeme…"` | « L’option « jwt.secret » ressemble à une valeur d’exemple. … » |
+| `secret` de 20 caractères | « L’option « jwt.secret » doit contenir au moins 32 octets pour l’algorithme choisi. … » |
+| `algorithm: "none"` | « L’option « jwt.algorithm » doit valoir l’une de ces valeurs : HS256, HS384, HS512. » |
+| `expiresInSeconds: 604800` | « L’option « jwt.expiresInSeconds » doit être un nombre entier compris entre 30 et 86400. » |
+| `password: { memoryCost: 4096 }` | « L’option « password.memoryCost » doit être un nombre entier compris entre 19456 et 4194304. » |
+| `jwt: { expiresIn: "1h", … }` | « Option inconnue dans « jwt » : expiresIn. Options acceptées : … » |
 
 ## Pour aller plus loin
 

@@ -5,6 +5,7 @@ import { createAuthenticationService } from "../../src/core/authentication-servi
 import {
   AUTH_FAILURE_REASONS,
   ContractViolationError,
+  DependencyFailureError,
   InvalidCredentialsError,
   InvalidInputError,
   InvalidTokenError,
@@ -96,7 +97,11 @@ describe("AuthenticationService.login", () => {
     deps.passwordProvider.hash.mock.mockImplementationOnce(async () => {
       throw new Error("transient");
     });
-    await assert.rejects(service.login({ identifier: "x", password: "p" }), /transient/);
+    await assert.rejects(service.login({ identifier: "x", password: "p" }), (error) => {
+      assert.ok(error instanceof DependencyFailureError);
+      assert.equal(error.cause.message, "transient");
+      return true;
+    });
     await assert.rejects(service.login({ identifier: "x", password: "p" }), InvalidCredentialsError);
   });
 
@@ -132,12 +137,50 @@ describe("AuthenticationService.login", () => {
     assert.equal(deps.users.findByIdentifier.mock.callCount(), 0);
   });
 
-  it("propagates repository failures unchanged", async () => {
+  it("wraps repository failures in a DependencyFailureError that keeps the cause", async () => {
     const failure = new Error("database unavailable");
     deps.users.findByIdentifier.mock.mockImplementation(async () => {
       throw failure;
     });
-    await assert.rejects(service.login({ identifier: "alice", password: "good-password" }), (error) => error === failure);
+    await assert.rejects(service.login({ identifier: "alice", password: "good-password" }), (error) => {
+      assert.ok(error instanceof DependencyFailureError);
+      assert.equal(error.code, "DEPENDENCY_FAILURE");
+      assert.equal(error.dependency, "UserRepository.findByIdentifier");
+      assert.equal(error.cause, failure);
+      assert.match(error.message, /L’appel à UserRepository\.findByIdentifier\(\) a échoué/);
+      return true;
+    });
+  });
+
+  it("wraps failures of every injected dependency, even non-Error values", async () => {
+    const cases = [
+      ["UserRepository.findById", () => deps.users.findById, () => service.verifyAccessToken("valid-token")],
+      ["TokenProvider.verify", () => deps.tokenProvider.verify, () => service.verifyAccessToken("valid-token")],
+      ["TokenProvider.issue", () => deps.tokenProvider.issue, () => service.login({ identifier: "alice", password: "good-password" })],
+      ["PasswordProvider.verify", () => deps.passwordProvider.verify, () => service.login({ identifier: "alice", password: "good-password" })]
+    ];
+    for (const [dependency, getMock, run] of cases) {
+      deps = createMocks();
+      service = createAuthenticationService(deps);
+      getMock().mock.mockImplementation(async () => {
+        throw "plain string thrown";
+      });
+      await assert.rejects(run(), (error) => {
+        assert.ok(error instanceof DependencyFailureError, dependency);
+        assert.equal(error.dependency, dependency);
+        assert.equal(error.cause, "plain string thrown");
+        return true;
+      });
+    }
+  });
+
+  it("detects token providers returning a malformed issued token", async () => {
+    deps.tokenProvider.issue.mock.mockImplementation(async () => ({ token: "t" }));
+    await assert.rejects(service.login({ identifier: "alice", password: "good-password" }), (error) => {
+      assert.ok(error instanceof ContractViolationError);
+      assert.match(error.message, /TokenProvider\.issue\(\) doit renvoyer/);
+      return true;
+    });
   });
 
   it("reports malformed repository records as contract violations", async () => {

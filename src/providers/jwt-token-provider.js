@@ -3,6 +3,7 @@ import { SignJWT, errors as joseErrors, jwtVerify } from "jose";
 import { resolveJwtOptions } from "../config/jwt-options.js";
 import { InvalidInputError, InvalidTokenError, TokenExpiredError } from "../core/errors.js";
 import { MAX_TOKEN_LENGTH } from "../core/input-limits.js";
+import { subjectInvalid } from "../core/messages.js";
 
 /**
  * Type de média RFC 9068 pour les jetons d’accès JWT. L’exiger lors de la
@@ -47,7 +48,7 @@ export function createJwtTokenProvider(options) {
   async function issue(input) {
     const subject = input?.subject;
     if (typeof subject !== "string" || subject.length === 0 || subject.length > MAX_SUBJECT_LENGTH) {
-      throw new InvalidInputError(`\`subject\` must be a non-empty string of at most ${MAX_SUBJECT_LENGTH} characters.`);
+      throw new InvalidInputError(subjectInvalid(MAX_SUBJECT_LENGTH));
     }
 
     const issuedAt = Math.floor(Date.now() / 1000);

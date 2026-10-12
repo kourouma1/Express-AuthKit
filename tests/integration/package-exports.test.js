@@ -14,6 +14,7 @@ describe("package exports", () => {
       "AuthKitError",
       "ConfigurationError",
       "ContractViolationError",
+      "DependencyFailureError",
       "InvalidCredentialsError",
       "InvalidInputError",
       "InvalidPasswordHashError",

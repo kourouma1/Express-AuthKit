@@ -1,4 +1,5 @@
 import { ConfigurationError } from "../core/errors.js";
+import { DEVELOPER_MESSAGES, secretTooShort } from "../core/messages.js";
 
 /**
  * Détection heuristique des secrets JWT manifestement faibles.
@@ -10,10 +11,6 @@ import { ConfigurationError } from "../core/errors.js";
  *
  * @module config/secret-strength
  */
-
-const GENERATE_HINT =
-  "Generate one with: npx express-authkit secret " +
-  "(or: node -e \"console.log(require('node:crypto').randomBytes(48).toString('base64url'))\")";
 
 /** Fragments qui signalent une valeur d’exemple copiée d’un tutoriel ou d’un `.env.example`. */
 const PLACEHOLDER_FRAGMENTS = Object.freeze([
@@ -54,7 +51,7 @@ const MAX_REPEATED_UNIT_LENGTH = 16;
  */
 export function assertStrongSecret(secret, minBytes) {
   if (secret === undefined || secret === null || secret === "") {
-    throw new ConfigurationError(`\`jwt.secret\` is required. ${GENERATE_HINT}`);
+    throw new ConfigurationError(DEVELOPER_MESSAGES.secretRequired);
   }
 
   if (typeof secret === "string") {
@@ -64,13 +61,13 @@ export function assertStrongSecret(secret, minBytes) {
 
   if (secret instanceof Uint8Array) {
     if (new Set(secret).size < MIN_DISTINCT_CHARACTERS) {
-      throw new ConfigurationError(`\`jwt.secret\` is too repetitive to be random. ${GENERATE_HINT}`);
+      throw new ConfigurationError(DEVELOPER_MESSAGES.secretRepetitive);
     }
     // Copie le tampon pour empêcher une modification ultérieure de changer la clé.
     return checkLength(Uint8Array.from(secret), minBytes);
   }
 
-  throw new ConfigurationError("`jwt.secret` must be a string or a Uint8Array.");
+  throw new ConfigurationError(DEVELOPER_MESSAGES.secretWrongType);
 }
 
 /**
@@ -80,9 +77,7 @@ export function assertStrongSecret(secret, minBytes) {
  */
 function checkLength(bytes, minBytes) {
   if (bytes.length < minBytes) {
-    throw new ConfigurationError(
-      `\`jwt.secret\` must be at least ${minBytes} bytes long for the selected algorithm. ${GENERATE_HINT}`
-    );
+    throw new ConfigurationError(secretTooShort(minBytes));
   }
   return bytes;
 }
@@ -93,10 +88,10 @@ function checkLength(bytes, minBytes) {
 function assertStrongStringSecret(secret) {
   const lowered = secret.toLowerCase();
   if (PLACEHOLDER_FRAGMENTS.some((fragment) => lowered.includes(fragment))) {
-    throw new ConfigurationError(`\`jwt.secret\` looks like a placeholder value. ${GENERATE_HINT}`);
+    throw new ConfigurationError(DEVELOPER_MESSAGES.secretPlaceholder);
   }
   if (new Set(secret).size < MIN_DISTINCT_CHARACTERS || isRepeatedPattern(secret)) {
-    throw new ConfigurationError(`\`jwt.secret\` is too repetitive to be random. ${GENERATE_HINT}`);
+    throw new ConfigurationError(DEVELOPER_MESSAGES.secretRepetitive);
   }
 }
 

@@ -8,6 +8,8 @@
  * @module core/errors
  */
 
+import { DEVELOPER_MESSAGES, PUBLIC_MESSAGES, dependencyFailed } from "./messages.js";
+
 /**
  * Codes d’erreur stables exposés par la bibliothèque.
  *
@@ -30,7 +32,9 @@ export const AUTH_ERROR_CODES = Object.freeze({
   /** Une dépendance injectée ne respecte pas son contrat. */
   CONTRACT_VIOLATION: "CONTRACT_VIOLATION",
   /** Le fournisseur de mots de passe ne peut pas lire un hash stocké. */
-  INVALID_PASSWORD_HASH: "INVALID_PASSWORD_HASH"
+  INVALID_PASSWORD_HASH: "INVALID_PASSWORD_HASH",
+  /** Une dépendance injectée (repository, provider) a échoué de façon inattendue. */
+  DEPENDENCY_FAILURE: "DEPENDENCY_FAILURE"
 });
 
 /**
@@ -63,6 +67,16 @@ export class AuthKitError extends Error {
     /** @type {string} */
     this.code = code;
   }
+
+  /**
+   * Représentation sûre pour les journaux et `JSON.stringify()` : ni pile
+   * d’appels, ni cause, ni raison interne.
+   *
+   * @returns {{ name: string, code: string, message: string }}
+   */
+  toJSON() {
+    return { name: this.name, code: this.code, message: this.message };
+  }
 }
 
 /**
@@ -73,7 +87,7 @@ export class InvalidCredentialsError extends AuthKitError {
    * @param {string} [reason] Raison d’audit interne (voir {@link AUTH_FAILURE_REASONS}).
    */
   constructor(reason) {
-    super(AUTH_ERROR_CODES.INVALID_CREDENTIALS, "Invalid credentials.");
+    super(AUTH_ERROR_CODES.INVALID_CREDENTIALS, PUBLIC_MESSAGES.invalidCredentials);
     // Non énumérable pour éviter une fuite accidentelle dans une réponse HTTP.
     Object.defineProperty(this, "reason", { value: reason, enumerable: false });
   }
@@ -96,7 +110,7 @@ export class InvalidInputError extends AuthKitError {
  */
 export class TokenMissingError extends AuthKitError {
   constructor() {
-    super(AUTH_ERROR_CODES.TOKEN_MISSING, "Authentication required.");
+    super(AUTH_ERROR_CODES.TOKEN_MISSING, PUBLIC_MESSAGES.tokenMissing);
   }
 }
 
@@ -108,7 +122,7 @@ export class InvalidTokenError extends AuthKitError {
    * @param {{ cause?: unknown, reason?: string }} [options]
    */
   constructor(options = {}) {
-    super(AUTH_ERROR_CODES.TOKEN_INVALID, "Invalid access token.", { cause: options.cause });
+    super(AUTH_ERROR_CODES.TOKEN_INVALID, PUBLIC_MESSAGES.tokenInvalid, { cause: options.cause });
     Object.defineProperty(this, "reason", { value: options.reason, enumerable: false });
   }
 }
@@ -121,7 +135,7 @@ export class TokenExpiredError extends AuthKitError {
    * @param {{ cause?: unknown }} [options]
    */
   constructor(options = {}) {
-    super(AUTH_ERROR_CODES.TOKEN_EXPIRED, "Access token expired.", options);
+    super(AUTH_ERROR_CODES.TOKEN_EXPIRED, PUBLIC_MESSAGES.tokenExpired, options);
   }
 }
 
@@ -158,7 +172,44 @@ export class InvalidPasswordHashError extends AuthKitError {
    * @param {{ cause?: unknown }} [options]
    */
   constructor(options = {}) {
-    super(AUTH_ERROR_CODES.INVALID_PASSWORD_HASH, "Stored password hash is not supported.", options);
+    super(AUTH_ERROR_CODES.INVALID_PASSWORD_HASH, DEVELOPER_MESSAGES.unsupportedPasswordHash, options);
+  }
+}
+
+/**
+ * Échec inattendu d’une dépendance injectée : base de données indisponible,
+ * service distant en panne, bug dans un provider personnalisé…
+ *
+ * L’erreur d’origine est conservée dans `cause` pour le diagnostic. Elle n’est
+ * jamais exposée aux clients HTTP par l’adaptateur Express.
+ */
+export class DependencyFailureError extends AuthKitError {
+  /**
+   * @param {string} dependency Nom de l’appel qui a échoué, par exemple « UserRepository.findById ».
+   * @param {unknown} cause Erreur d’origine.
+   */
+  constructor(dependency, cause) {
+    super(AUTH_ERROR_CODES.DEPENDENCY_FAILURE, dependencyFailed(dependency), { cause });
+    /** @type {string} */
+    this.dependency = dependency;
+  }
+}
+
+/**
+ * Exécute l’appel à une dépendance injectée. Les erreurs de la bibliothèque
+ * (jeton expiré, hash illisible…) sont transmises telles quelles ; toute autre
+ * erreur est enveloppée dans une {@link DependencyFailureError}.
+ *
+ * @template T
+ * @param {string} dependency
+ * @param {() => Promise<T> | T} call
+ * @returns {Promise<T>}
+ */
+export async function callDependency(dependency, call) {
+  try {
+    return await call();
+  } catch (error) {
+    throw isAuthKitError(error) ? error : new DependencyFailureError(dependency, error);
   }
 }
 

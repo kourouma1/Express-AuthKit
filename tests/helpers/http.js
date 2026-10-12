@@ -12,6 +12,7 @@ export async function startServer(app) {
   const baseUrl = `http://127.0.0.1:${port}`;
 
   return {
+    baseUrl,
     /**
      * @param {string} path
      * @param {{ method?: string, headers?: Record<string, string>, body?: unknown }} [init]

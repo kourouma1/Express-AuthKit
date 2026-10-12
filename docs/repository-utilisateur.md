@@ -48,9 +48,10 @@ copiés dans le token ni dans `req.auth`.
    doit être égal à celui reçu. Sinon, la bibliothèque lève une `ContractViolationError`.
 3. **Normalisez l'identifiant** dans `findByIdentifier` : `trim()` et minuscules pour un e-mail.
    Utilisez exactement la même normalisation à l'inscription.
-4. **Ne levez une erreur que pour un problème technique** (base indisponible…). L'erreur est
-   transmise telle quelle. Avec l'adaptateur Express, elle arrive dans votre gestionnaire
-   d'erreurs (réponse 500).
+4. **Ne levez une erreur que pour un problème technique** (base indisponible…). La bibliothèque
+   l'enveloppe dans une `DependencyFailureError` (code `DEPENDENCY_FAILURE`). L'erreur
+   d'origine reste dans `error.cause`. Avec l'adaptateur Express, elle arrive dans votre
+   gestionnaire d'erreurs (réponse 500), sans jamais être montrée au client.
 5. **Pas de compte désactivable ?** Renvoyez simplement `isActive: true`.
 6. **Utilisez des requêtes paramétrées.** La bibliothèque garantit déjà que `identifier` et
    `id` sont des chaînes. Elle bloque ainsi les injections d'opérateurs NoSQL comme
@@ -59,7 +60,7 @@ copiés dans le token ni dans `req.auth`.
 Deux erreurs vous aident à corriger un repository mal écrit :
 
 - Au **démarrage**, une méthode manquante lève
-  `ContractViolationError: UserRepository must implement: findById().`
+  `ContractViolationError: UserRepository doit implémenter la méthode findById().`
 - À l'**exécution**, un enregistrement mal formé (`passwordHash` oublié dans la requête,
   `isActive` absent…) lève une `ContractViolationError`. Son message indique comment corriger.
 

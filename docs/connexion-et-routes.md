@@ -142,7 +142,7 @@ Toutes les routes du routeur exigent un token valide.
 | Token expiré | 401 | `TOKEN_EXPIRED` |
 
 ```json
-{ "error": { "code": "TOKEN_EXPIRED", "message": "Access token expired." } }
+{ "error": { "code": "TOKEN_EXPIRED", "message": "Jeton d’accès expiré." } }
 ```
 
 Quand le client reçoit `TOKEN_EXPIRED`, il redemande une connexion.
@@ -215,7 +215,7 @@ app.use(expressAuth.errorHandler());
 ```
 
 Les cas 3, 4 et 5 donnent **exactement la même erreur publique** (`INVALID_CREDENTIALS`,
-« Invalid credentials. »). Un attaquant ne peut donc pas savoir si un compte existe.
+« Identifiants invalides. »). Un attaquant ne peut donc pas savoir si un compte existe.
 La vraie raison est disponible côté serveur dans `error.reason`
 (voir [erreurs](erreurs.md#journaliser-les-échecs-de-connexion)).
 

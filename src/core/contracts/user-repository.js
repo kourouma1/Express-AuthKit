@@ -1,4 +1,5 @@
 import { ContractViolationError } from "../errors.js";
+import { DEVELOPER_MESSAGES } from "../messages.js";
 import { assertImplements } from "./assert-contract.js";
 
 /**
@@ -59,22 +60,16 @@ export function normalizeUserRecord(record) {
     return null;
   }
   if (typeof record !== "object") {
-    throw new ContractViolationError("UserRepository must resolve to an object, null or undefined.");
+    throw new ContractViolationError(DEVELOPER_MESSAGES.repositoryRecordNotObject);
   }
 
   const { passwordHash, isActive } = /** @type {Record<string, unknown>} */ (record);
   const id = normalizeUserId(/** @type {Record<string, unknown>} */ (record).id);
   if (typeof passwordHash !== "string" || passwordHash.length === 0) {
-    throw new ContractViolationError(
-      "UserRepository records must have a non-empty string `passwordHash`. " +
-        "If your query selects specific fields, include the password hash field."
-    );
+    throw new ContractViolationError(DEVELOPER_MESSAGES.repositoryRecordPasswordHash);
   }
   if (typeof isActive !== "boolean") {
-    throw new ContractViolationError(
-      "UserRepository records must have a boolean `isActive`. " +
-        "If your application cannot disable accounts, return `isActive: true`."
-    );
+    throw new ContractViolationError(DEVELOPER_MESSAGES.repositoryRecordIsActive);
   }
 
   return { id, passwordHash, isActive };
@@ -99,7 +94,5 @@ function normalizeUserId(id) {
   if (id !== null && typeof id === "object" && typeof id.toHexString === "function") {
     return id.toHexString();
   }
-  throw new ContractViolationError(
-    "UserRepository records must have an `id`: a non-empty string, an integer or a MongoDB ObjectId."
-  );
+  throw new ContractViolationError(DEVELOPER_MESSAGES.repositoryRecordId);
 }

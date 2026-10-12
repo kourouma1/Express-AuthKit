@@ -32,10 +32,10 @@ Toutes ces erreurs héritent de la classe `AuthKitError`.
 | `code` | Statut | Quand ? | Message envoyé |
 | --- | --- | --- | --- |
 | `INVALID_INPUT` | 400 | Entrée mal formée (`login`, `password.hash`) | décrit le champ fautif |
-| `INVALID_CREDENTIALS` | 401 | Utilisateur inconnu, mauvais mot de passe, compte désactivé | `Invalid credentials.` |
-| `TOKEN_MISSING` | 401 | Pas de token `Bearer` | `Authentication required.` |
-| `TOKEN_INVALID` | 401 | Token mal formé, falsifié, mauvais `iss`/`aud`/`typ`/algorithme, utilisateur supprimé ou désactivé | `Invalid access token.` |
-| `TOKEN_EXPIRED` | 401 | Token expiré (signature valide) | `Access token expired.` |
+| `INVALID_CREDENTIALS` | 401 | Utilisateur inconnu, mauvais mot de passe, compte désactivé | « Identifiants invalides. » |
+| `TOKEN_MISSING` | 401 | Pas de token `Bearer` | « Authentification requise. » |
+| `TOKEN_INVALID` | 401 | Token mal formé, falsifié, mauvais `iss`/`aud`/`typ`/algorithme, utilisateur supprimé ou désactivé | « Jeton d’accès invalide. » |
+| `TOKEN_EXPIRED` | 401 | Token expiré (signature valide) | « Jeton d’accès expiré. » |
 
 - **400** : la requête est mal formée.
 - **401** : la personne n'est pas authentifiée.
@@ -46,14 +46,47 @@ Toutes ces erreurs héritent de la classe `AuthKitError`.
 | --- | --- | --- | --- |
 | `INVALID_CONFIGURATION` | Options absentes ou dangereuses | levée au démarrage | décrit l'option |
 | `CONTRACT_VIOLATION` | Repository ou provider non conforme | 500 via `next()` | décrit le contrat |
-| `INVALID_PASSWORD_HASH` | Hash stocké illisible (bcrypt, texte brut…) | 500 via `next()` | `Stored password hash is not supported.` |
+| `INVALID_PASSWORD_HASH` | Hash stocké illisible (bcrypt, texte brut…) | 500 via `next()` | « Le hash de mot de passe enregistré n’est pas au format Argon2id… » |
+| `DEPENDENCY_FAILURE` | Votre repository ou un provider a planté (base de données indisponible, bug…) | 500 via `next()` | « L’appel à UserRepository.findById() a échoué… » |
 
-Les erreurs qui ne viennent pas de la bibliothèque (base de données indisponible, bug dans
-votre code) sont **transmises telles quelles**.
+Tous les messages sont en français et expliquent comment corriger le problème.
 
 Noms des classes, dans l'ordre des deux tableaux : `InvalidInputError`,
 `InvalidCredentialsError`, `TokenMissingError`, `InvalidTokenError`, `TokenExpiredError`,
-`ConfigurationError`, `ContractViolationError`, `InvalidPasswordHashError`.
+`ConfigurationError`, `ContractViolationError`, `InvalidPasswordHashError`,
+`DependencyFailureError`.
+
+### Quand votre base de données tombe : `DEPENDENCY_FAILURE`
+
+Si votre repository (ou un provider) lève une erreur, la bibliothèque l'enveloppe dans une
+`DependencyFailureError`. Vous obtenez ainsi toujours une erreur avec un `code` stable, et
+vous savez **quel appel** a échoué :
+
+```javascript
+import { AUTH_ERROR_CODES } from "express-authkit";
+
+app.use((error, req, res, _next) => {
+  if (error.code === AUTH_ERROR_CODES.DEPENDENCY_FAILURE) {
+    // error.dependency → "UserRepository.findById"
+    // error.cause      → l'erreur d'origine (par exemple celle de votre base de données)
+    logger.error({ dependency: error.dependency, cause: String(error.cause) });
+  }
+  res.status(500).json({ error: { code: "INTERNAL_ERROR", message: "Erreur interne du serveur." } });
+});
+```
+
+L'erreur d'origine reste dans `error.cause` : elle n'est **jamais** envoyée au client.
+
+### Journaliser une erreur sans risque
+
+Toutes les erreurs de la bibliothèque se convertissent proprement en JSON :
+
+```javascript
+JSON.stringify(error);
+// {"name":"InvalidCredentialsError","code":"INVALID_CREDENTIALS","message":"Identifiants invalides."}
+```
+
+Cette version ne contient ni la pile d'appels, ni `cause`, ni `reason`.
 
 ## Avec Express
 
@@ -71,10 +104,19 @@ personnalisée, inscription…) ? Ajoutez ce gestionnaire **après** vos routes 
 app.use(expressAuth.errorHandler());
 ```
 
-Il transforme `INVALID_INPUT` (400), `INVALID_CREDENTIALS` et `TOKEN_*` (401) en JSON :
+Il transforme `INVALID_INPUT` (400), `INVALID_CREDENTIALS` et `TOKEN_*` (401) en JSON.
+Il gère aussi les erreurs du parseur `express.json()` : un JSON mal formé donne un **400**
+(« Le corps de la requête n’est pas un JSON valide. ») et un corps trop gros un **413**,
+au lieu de la page d'erreur HTML d'Express.
 
 ```json
-{ "error": { "code": "INVALID_CREDENTIALS", "message": "Invalid credentials." } }
+{ "error": { "code": "INVALID_INPUT", "message": "Le corps de la requête n’est pas un JSON valide." } }
+```
+
+Exemple pour un échec de connexion :
+
+```json
+{ "error": { "code": "INVALID_CREDENTIALS", "message": "Identifiants invalides." } }
 ```
 
 Il ajoute l'en-tête `Cache-Control: no-store` (pas de mise en cache) et, pour les 401,
@@ -90,7 +132,7 @@ app.use(expressAuth.errorHandler());
 app.use((error, req, res, _next) => {
   // Journalisez sans corps de requête ni en-tête Authorization.
   logger.error({ err: { name: error.name, code: error.code }, method: req.method, path: req.path });
-  res.status(500).json({ error: { code: "INTERNAL_ERROR", message: "Internal server error." } });
+  res.status(500).json({ error: { code: "INTERNAL_ERROR", message: "Erreur interne du serveur." } });
 });
 ```
 

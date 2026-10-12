@@ -22,6 +22,7 @@ export {
   AuthKitError,
   ConfigurationError,
   ContractViolationError,
+  DependencyFailureError,
   InvalidCredentialsError,
   InvalidInputError,
   InvalidPasswordHashError,

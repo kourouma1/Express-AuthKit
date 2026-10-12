@@ -1,4 +1,11 @@
 import { ConfigurationError } from "../core/errors.js";
+import {
+  notPlainObject,
+  optionIntegerRange,
+  optionRequiredString,
+  optionTooLong,
+  unknownOptions
+} from "../core/messages.js";
 
 /**
  * Petites fonctions de vérification partagées par les validateurs de configuration.
@@ -25,7 +32,7 @@ export function isPlainObject(value) {
  */
 export function assertPlainObject(value, name) {
   if (!isPlainObject(value)) {
-    throw new ConfigurationError(`\`${name}\` must be a plain object.`);
+    throw new ConfigurationError(notPlainObject(name));
   }
 }
 
@@ -40,9 +47,7 @@ export function assertPlainObject(value, name) {
 export function assertKnownKeys(object, allowedKeys, name) {
   const unknown = Object.keys(object).filter((key) => !allowedKeys.includes(key));
   if (unknown.length > 0) {
-    throw new ConfigurationError(
-      `Unknown option(s) in \`${name}\`: ${unknown.join(", ")}. Allowed: ${allowedKeys.join(", ")}.`
-    );
+    throw new ConfigurationError(unknownOptions(name, unknown, allowedKeys));
   }
 }
 
@@ -54,10 +59,10 @@ export function assertKnownKeys(object, allowedKeys, name) {
  */
 export function assertNonEmptyString(value, name, maxLength) {
   if (typeof value !== "string" || value.trim().length === 0) {
-    throw new ConfigurationError(`\`${name}\` must be a non-empty string.`);
+    throw new ConfigurationError(optionRequiredString(name));
   }
   if (value.length > maxLength) {
-    throw new ConfigurationError(`\`${name}\` must not exceed ${maxLength} characters.`);
+    throw new ConfigurationError(optionTooLong(name, maxLength));
   }
 }
 
@@ -70,6 +75,6 @@ export function assertNonEmptyString(value, name, maxLength) {
  */
 export function assertIntegerInRange(value, name, min, max) {
   if (!Number.isInteger(value) || value < min || value > max) {
-    throw new ConfigurationError(`\`${name}\` must be an integer between ${min} and ${max}.`);
+    throw new ConfigurationError(optionIntegerRange(name, min, max));
   }
 }

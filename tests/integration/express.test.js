@@ -82,7 +82,7 @@ describe("Express adapter", () => {
     ]);
     for (const response of responses) {
       assert.equal(response.status, 401);
-      assert.deepEqual(response.body, { error: { code: "INVALID_CREDENTIALS", message: "Invalid credentials." } });
+      assert.deepEqual(response.body, { error: { code: "INVALID_CREDENTIALS", message: "Identifiants invalides." } });
       assert.equal(response.headers.get("www-authenticate"), 'Bearer realm="api"');
       assert.equal(response.headers.get("cache-control"), "no-store");
     }
@@ -117,7 +117,7 @@ describe("Express adapter", () => {
     for (const authorization of ["Bearer not-a-jwt", "Bearer a b", `Bearer ${forged}`]) {
       const response = await server.request("/profile", { headers: { authorization } });
       assert.equal(response.status, 401, authorization);
-      assert.deepEqual(response.body, { error: { code: "TOKEN_INVALID", message: "Invalid access token." } });
+      assert.deepEqual(response.body, { error: { code: "TOKEN_INVALID", message: "Jeton d’accès invalide." } });
       assert.equal(response.headers.get("www-authenticate"), 'Bearer realm="api", error="invalid_token"');
     }
   });
@@ -246,7 +246,7 @@ describe("expressAuth.login()", () => {
       body: { identifier: "alice@example.test", password: "wrong password" }
     });
     assert.equal(response.status, 401);
-    assert.deepEqual(response.body, { error: { code: "INVALID_CREDENTIALS", message: "Invalid credentials." } });
+    assert.deepEqual(response.body, { error: { code: "INVALID_CREDENTIALS", message: "Identifiants invalides." } });
   });
 
   it("explains a missing JSON body", async () => {
@@ -274,5 +274,74 @@ describe("expressAuth.login()", () => {
       assert.throws(() => expressAuth.login({ identifierField }), ConfigurationError);
     }
     assert.throws(() => expressAuth.login({ field: "email" }), ConfigurationError);
+  });
+});
+
+describe("Express error handling", () => {
+  let server;
+
+  before(async () => {
+    const { auth } = await createTestAuthKit();
+    const expressAuth = createExpressAuth(auth);
+    const app = express();
+    app.post("/login", express.json({ limit: "1kb" }), expressAuth.login({ identifierField: "email" }));
+    // Erreur volontaire : parenthèses oubliées.
+    app.get("/forgot-parentheses", expressAuth.authenticate, (req, res) => res.end());
+    app.use(expressAuth.errorHandler());
+    app.use((error, req, res, _next) => {
+      res.status(500).json({ error: { code: error.code ?? "INTERNAL_ERROR", message: error.message } });
+    });
+    server = await startServer(app);
+  });
+
+  after(() => server.close());
+
+  async function postRaw(path, body) {
+    const response = await fetch(`${server.baseUrl}${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body
+    });
+    return { status: response.status, type: response.headers.get("content-type"), body: await response.json() };
+  }
+
+  it("answers malformed JSON with a clean French JSON error", async () => {
+    const response = await postRaw("/login", "{not json");
+    assert.equal(response.status, 400);
+    assert.match(response.type, /application\/json/);
+    assert.deepEqual(response.body, {
+      error: { code: "INVALID_INPUT", message: "Le corps de la requête n’est pas un JSON valide." }
+    });
+  });
+
+  it("answers oversized bodies with 413", async () => {
+    const response = await postRaw("/login", JSON.stringify({ email: "a".repeat(2000), password: "x" }));
+    assert.equal(response.status, 413);
+    assert.equal(response.body.error.message, "Le corps de la requête est trop volumineux.");
+  });
+
+  it("names the configured identifier field in validation messages", async () => {
+    const response = await postRaw("/login", JSON.stringify({ identifier: "alice@example.test", password: "x" }));
+    assert.equal(response.status, 400);
+    assert.equal(response.body.error.message, "Le champ « email » est obligatoire et doit être un texte non vide.");
+  });
+
+  it("fails fast instead of hanging when parentheses are forgotten", async () => {
+    const response = await fetch(`${server.baseUrl}/forgot-parentheses`, { signal: AbortSignal.timeout(2000) });
+    assert.equal(response.status, 500);
+    const body = await response.json();
+    assert.equal(body.error.code, "INVALID_CONFIGURATION");
+    assert.match(body.error.message, /écrivez expressAuth\.authenticate\(\)/);
+  });
+
+  it("rejects factory misuse for every helper", async () => {
+    const { auth } = await createTestAuthKit();
+    const expressAuth = createExpressAuth(auth);
+    const fakeReq = {};
+    const fakeRes = {};
+    const next = () => {};
+    assert.throws(() => expressAuth.authenticate(fakeReq, fakeRes, next), ConfigurationError);
+    assert.throws(() => expressAuth.login(fakeReq, fakeRes, next), ConfigurationError);
+    assert.throws(() => expressAuth.errorHandler(new Error("x"), fakeReq, fakeRes, next), ConfigurationError);
   });
 });

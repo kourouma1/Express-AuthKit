@@ -3,6 +3,7 @@ import { argon2id, hash as argon2Hash, verify as argon2Verify } from "argon2";
 import { resolvePasswordOptions } from "../config/password-options.js";
 import { InvalidInputError, InvalidPasswordHashError } from "../core/errors.js";
 import { MAX_PASSWORD_LENGTH } from "../core/input-limits.js";
+import { fieldRequired, fieldTooLong } from "../core/messages.js";
 
 /** Seuls les hash Argon2id sont acceptés : Argon2i et Argon2d ne sont pas recommandés pour les mots de passe. */
 const ARGON2ID_PREFIX = "$argon2id$";
@@ -59,9 +60,9 @@ export function createArgon2PasswordProvider(options) {
  */
 function assertPassword(password) {
   if (typeof password !== "string" || password.length === 0) {
-    throw new InvalidInputError("`password` must be a non-empty string.");
+    throw new InvalidInputError(fieldRequired("password"));
   }
   if (password.length > MAX_PASSWORD_LENGTH) {
-    throw new InvalidInputError(`\`password\` must not exceed ${MAX_PASSWORD_LENGTH} characters.`);
+    throw new InvalidInputError(fieldTooLong("password", MAX_PASSWORD_LENGTH));
   }
 }

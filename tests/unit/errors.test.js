@@ -45,6 +45,22 @@ describe("errors", () => {
     assert.equal(JSON.stringify(tokenError).includes("ACCOUNT_DISABLED"), false);
   });
 
+  it("serializes safely: no stack, no cause, no internal reason", () => {
+    const error = new InvalidCredentialsError(AUTH_FAILURE_REASONS.ACCOUNT_DISABLED);
+    assert.deepEqual(JSON.parse(JSON.stringify(error)), {
+      name: "InvalidCredentialsError",
+      code: "INVALID_CREDENTIALS",
+      message: "Identifiants invalides."
+    });
+    const withCause = new TokenExpiredError({ cause: new Error("secret detail") });
+    assert.equal(JSON.stringify(withCause).includes("secret detail"), false);
+  });
+
+  it("uses French public messages", () => {
+    assert.equal(new InvalidTokenError().message, "Jeton d’accès invalide.");
+    assert.equal(new TokenExpiredError().message, "Jeton d’accès expiré.");
+  });
+
   it("preserves the cause for server-side diagnostics", () => {
     const cause = new Error("jose detail");
     assert.equal(new TokenExpiredError({ cause }).cause, cause);

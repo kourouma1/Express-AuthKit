@@ -1,4 +1,5 @@
-import { AUTH_ERROR_CODES, isAuthKitError } from "../../core/errors.js";
+import { AUTH_ERROR_CODES, InvalidInputError, isAuthKitError } from "../../core/errors.js";
+import { PUBLIC_MESSAGES } from "../../core/messages.js";
 
 /**
  * Statuts HTTP pour les erreurs causées par le client. Toute autre erreur
@@ -24,6 +25,30 @@ const INVALID_TOKEN_CODES = new Set([AUTH_ERROR_CODES.TOKEN_INVALID, AUTH_ERROR_
  */
 export function getClientErrorStatus(error) {
   return isAuthKitError(error) ? CLIENT_ERROR_STATUSES[error.code] : undefined;
+}
+
+/**
+ * Comme {@link getClientErrorStatus}, mais reconnaît aussi les erreurs du
+ * parseur JSON d’Express (`express.json()`) : un JSON mal formé ou trop
+ * volumineux reçoit une réponse JSON propre au lieu de la page d’erreur HTML
+ * d’Express, qui peut afficher la pile d’appels en développement.
+ *
+ * @param {unknown} error
+ * @returns {{ error: import("../../core/errors.js").AuthKitError, status: number } | undefined}
+ */
+export function resolveClientError(error) {
+  const status = getClientErrorStatus(error);
+  if (status !== undefined) {
+    return { error: /** @type {import("../../core/errors.js").AuthKitError} */ (error), status };
+  }
+  const bodyParserErrorType = error !== null && typeof error === "object" ? error.type : undefined;
+  if (bodyParserErrorType === "entity.parse.failed") {
+    return { error: new InvalidInputError(PUBLIC_MESSAGES.malformedJsonBody), status: 400 };
+  }
+  if (bodyParserErrorType === "entity.too.large") {
+    return { error: new InvalidInputError(PUBLIC_MESSAGES.payloadTooLarge), status: 413 };
+  }
+  return undefined;
 }
 
 /**

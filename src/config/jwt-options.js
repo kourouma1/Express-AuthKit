@@ -1,4 +1,5 @@
 import { ConfigurationError } from "../core/errors.js";
+import { unsupportedAlgorithm } from "../core/messages.js";
 import {
   assertIntegerInRange,
   assertKnownKeys,
@@ -55,9 +56,7 @@ export function resolveJwtOptions(options) {
 
   const algorithm = options.algorithm ?? JWT_DEFAULTS.algorithm;
   if (!Object.hasOwn(JWT_ALGORITHM_MIN_KEY_BYTES, algorithm)) {
-    throw new ConfigurationError(
-      `\`jwt.algorithm\` must be one of: ${Object.keys(JWT_ALGORITHM_MIN_KEY_BYTES).join(", ")}.`
-    );
+    throw new ConfigurationError(unsupportedAlgorithm(Object.keys(JWT_ALGORITHM_MIN_KEY_BYTES)));
   }
 
   const key = assertStrongSecret(options.secret, JWT_ALGORITHM_MIN_KEY_BYTES[algorithm]);

@@ -18,9 +18,9 @@ describe("CLI express-authkit", () => {
   });
 
   it("prints usage without arguments and fails on unknown commands", () => {
-    assert.match(execFileSync(process.execPath, [CLI], { encoding: "utf8" }), /Usage: express-authkit/);
+    assert.match(execFileSync(process.execPath, [CLI], { encoding: "utf8" }), /Utilisation : express-authkit/);
     const unknown = spawnSync(process.execPath, [CLI, "nope"], { encoding: "utf8" });
     assert.equal(unknown.status, 1);
-    assert.match(unknown.stderr, /Unknown command: nope/);
+    assert.match(unknown.stderr, /Commande inconnue : nope/);
   });
 });

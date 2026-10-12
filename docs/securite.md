@@ -91,7 +91,7 @@ const redisStore = (prefix) =>
 
 const tooManyAttempts = (req, res, next, options) =>
   res.status(options.statusCode).json({
-    error: { code: "TOO_MANY_REQUESTS", message: "Too many login attempts. Try again later." }
+    error: { code: "TOO_MANY_REQUESTS", message: "Trop de tentatives de connexion. Réessayez plus tard." }
   });
 
 const loginLimiterByIp = rateLimit({

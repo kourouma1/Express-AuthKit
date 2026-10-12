@@ -182,11 +182,26 @@ L'utilisateur connecté, tel que le renvoie `verifyAccessToken()` et tel qu'il e
   userId: string,     // sub
   tokenId: string,    // jti
   issuedAt: number,   // iat, secondes Unix
-  expiresAt: number   // exp, secondes Unix
+  expiresAt: number,  // exp, secondes Unix
+  roles: string[],        // relus dans le repository à chaque requête ([] si absents)
+  permissions: string[]   // idem
 }
 ```
 
-Il ne contient jamais le hash du mot de passe ni le token brut.
+Il ne contient jamais le hash du mot de passe ni le token brut. Les rôles et permissions ne
+sont jamais écrits dans le token.
+
+### `isAuthorized(principal, requirement, context?)` → `Promise<boolean>`
+
+Indique si un utilisateur connecté respecte une règle d'accès, sans Express. Mêmes règles
+que [`expressAuth.authorize()`](#expressauthauthorizerequirement--middleware).
+
+```javascript
+const allowed = await isAuthorized(principal, { anyRole: ["admin", "manager"] });
+```
+
+**Erreurs** : `ConfigurationError` (règle invalide), `ContractViolationError` (`check` ne
+renvoie pas un booléen).
 
 ### Providers par défaut
 
@@ -272,6 +287,7 @@ try {
 
 | Export | Code | Quand ? |
 | --- | --- | --- |
+| `AccessDeniedError` | `ACCESS_DENIED` | Connecté, mais sans les droits demandés (403). |
 | `AuthKitError` | — | Classe de base. Propriétés : `name`, `code`, `message`, `cause` éventuelle. `toJSON()` renvoie `{ name, code, message }` (sans pile ni cause). |
 | `InvalidCredentialsError` | `INVALID_CREDENTIALS` | Connexion refusée. Propriété cachée `reason` (voir ci-dessous). |
 | `InvalidInputError` | `INVALID_INPUT` | Donnée de mauvais type, vide ou trop longue. |
@@ -329,6 +345,32 @@ app.use(expressAuth.errorHandler());
 > **N'oubliez pas les parenthèses** : écrivez `expressAuth.authenticate()`, `expressAuth.login()`
 > et `expressAuth.errorHandler()`. Sans parenthèses, la bibliothèque lève une
 > `ConfigurationError` qui vous l'indique, au lieu de laisser la requête bloquée.
+
+#### `expressAuth.authorize(requirement)` → middleware
+
+Réserve une route à certains utilisateurs. Authentifie aussi la requête si besoin : inutile
+d'ajouter `authenticate()` avant.
+
+| Règle | Signification |
+| --- | --- |
+| `"admin"` | L'utilisateur a le rôle `admin`. |
+| `{ anyRole: ["admin", "manager"] }` | Il a **au moins un** de ces rôles. |
+| `{ allPermissions: ["orders:read", "orders:write"] }` | Il a **toutes** ces permissions. |
+| `{ check: (user, req) => boolean }` | Règle personnalisée, éventuellement `async`. |
+
+Plusieurs règles dans un même objet doivent **toutes** être respectées.
+
+```javascript
+app.get("/admin", expressAuth.authorize("admin"), handler);
+```
+
+- Pas de token valide : **401**. Token valide mais droits insuffisants : **403** `ACCESS_DENIED`,
+  avec `WWW-Authenticate: Bearer realm="api", error="insufficient_scope"`.
+- `check` qui lève une erreur ou ne renvoie pas un booléen : accès refusé, erreur transmise à
+  `next(error)`.
+- **Erreur au démarrage** : `ConfigurationError` si la règle est invalide.
+
+Guide complet : [rôles et permissions](roles-et-permissions.md).
 
 #### `expressAuth.authenticate()` → middleware
 
@@ -395,6 +437,7 @@ exemple si vous appelez `auth.login()` vous-même), ainsi que les erreurs du par
 | Erreur | Statut HTTP |
 | --- | --- |
 | `INVALID_INPUT` | 400 |
+| `ACCESS_DENIED` | 403 |
 | JSON mal formé (parseur `express.json()`) | 400, code `INVALID_INPUT` |
 | Corps trop volumineux (parseur `express.json()`) | 413, code `INVALID_INPUT` |
 | `INVALID_CREDENTIALS`, `TOKEN_MISSING`, `TOKEN_INVALID`, `TOKEN_EXPIRED`, `REFRESH_TOKEN_INVALID` | 401 |
@@ -444,5 +487,5 @@ function audit(principal) { /* … */ }
 Types exportés : `AuthKit`, `AuthKitOptions`, `JwtOptions`, `PasswordOptions`,
 `UserRepository`, `AuthUserRecord`, `PasswordProvider`, `TokenProvider`, `IssuedToken`,
 `VerifiedTokenClaims`, `AuthenticationService`, `LoginCredentials`, `LoginResult`,
-`AuthPrincipal`, `UserIdInput`, `RefreshTokenOptions`, `RefreshTokenStore`,
+`AuthPrincipal`, `UserIdInput`, `AuthorizationRequirement`, `RefreshTokenOptions`, `RefreshTokenStore`,
 `RefreshTokenRecord`, `ConsumedRefreshToken`.

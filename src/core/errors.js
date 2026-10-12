@@ -33,6 +33,8 @@ export const AUTH_ERROR_CODES = Object.freeze({
   CONTRACT_VIOLATION: "CONTRACT_VIOLATION",
   /** Le fournisseur de mots de passe ne peut pas lire un hash stocké. */
   INVALID_PASSWORD_HASH: "INVALID_PASSWORD_HASH",
+  /** L’utilisateur est authentifié mais n’a pas les rôles ou permissions requis. */
+  ACCESS_DENIED: "ACCESS_DENIED",
   /** Le jeton de rafraîchissement est inconnu, expiré, déjà utilisé ou révoqué. */
   REFRESH_TOKEN_INVALID: "REFRESH_TOKEN_INVALID",
   /** Une dépendance injectée (repository, provider) a échoué de façon inattendue. */
@@ -144,6 +146,16 @@ export class TokenExpiredError extends AuthKitError {
    */
   constructor(options = {}) {
     super(AUTH_ERROR_CODES.TOKEN_EXPIRED, PUBLIC_MESSAGES.tokenExpired, options);
+  }
+}
+
+/**
+ * Utilisateur authentifié, mais sans les droits demandés (rôle, permission ou
+ * règle personnalisée). Le message ne dit pas quel droit manque.
+ */
+export class AccessDeniedError extends AuthKitError {
+  constructor() {
+    super(AUTH_ERROR_CODES.ACCESS_DENIED, PUBLIC_MESSAGES.accessDenied);
   }
 }
 

@@ -57,6 +57,11 @@ sous la rubrique **Incompatible**. L'API publique se limite aux exports de
   d'empreinte SHA-256, rotation à chaque usage, révocation de toute la session en cas de
   réutilisation. Contrat `RefreshTokenStore` (`save`, `consume`, `revokeFamily`, `revokeUser`),
   `createInMemoryRefreshTokenStore()` pour le développement, exemple PostgreSQL documenté.
+- **Rôles et permissions** : `expressAuth.authorize(rule)` (rôle, `anyRole`, `allPermissions`,
+  règle `check` personnalisée), `isAuthorized()` hors d'Express, nouvelle erreur
+  `AccessDeniedError` (`ACCESS_DENIED`, 403). Le repository peut renvoyer `roles` et
+  `permissions` : ils sont relus à chaque requête (changement immédiat), exposés dans
+  `req.auth`, et jamais écrits dans le JWT.
 - Nouvelle erreur `InvalidRefreshTokenError` (`REFRESH_TOKEN_INVALID`, 401).
 - **Types TypeScript** générés depuis le JSDoc (`types/*.d.ts`, champ `types` et conditions
   `types` dans `exports`), avec `req.auth` typé pour Express. Script `npm run typecheck` :

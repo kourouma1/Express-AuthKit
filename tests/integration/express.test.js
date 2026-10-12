@@ -85,7 +85,7 @@ describe("Express adapter", () => {
     });
     assert.equal(profile.status, 200);
     assert.equal(profile.body.userId, "user-1");
-    assert.deepEqual(Object.keys(profile.body.principal).sort(), ["expiresAt", "issuedAt", "tokenId", "userId"]);
+    assert.deepEqual(Object.keys(profile.body.principal).sort(), ["expiresAt", "issuedAt", "permissions", "roles", "tokenId", "userId"]);
   });
 
   it("answers 401 with a generic body for every login failure", async () => {

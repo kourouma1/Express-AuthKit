@@ -52,7 +52,7 @@ describe("AuthenticationService.login", () => {
       accessToken: "token-for-u1",
       tokenType: "Bearer",
       expiresIn: 900,
-      principal: { userId: "u1", tokenId: "jti-1", issuedAt: 1000, expiresAt: 1900 }
+      principal: { userId: "u1", tokenId: "jti-1", issuedAt: 1000, expiresAt: 1900, roles: [], permissions: [] }
     });
     assert.ok(Object.isFrozen(result.principal));
     assert.deepEqual(deps.tokenProvider.issue.mock.calls[0].arguments, [{ subject: "u1" }]);
@@ -199,7 +199,14 @@ describe("AuthenticationService.verifyAccessToken", () => {
 
   it("returns the principal for a valid token of an active user", async () => {
     const principal = await service.verifyAccessToken("valid-token");
-    assert.deepEqual(principal, { userId: "u1", tokenId: "jti-1", issuedAt: 1000, expiresAt: 1900 });
+    assert.deepEqual(principal, {
+      userId: "u1",
+      tokenId: "jti-1",
+      issuedAt: 1000,
+      expiresAt: 1900,
+      roles: [],
+      permissions: []
+    });
     assert.ok(Object.isFrozen(principal));
     assert.deepEqual(deps.users.findById.mock.calls[0].arguments, ["u1"]);
   });

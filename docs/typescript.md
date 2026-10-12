@@ -18,7 +18,9 @@ npm install --save-dev @types/express
 - Les options de `createAuthKit()` sont vérifiées : une faute de frappe ou un mauvais type
   (`expiresInSeconds: "15m"` au lieu de `900`) est signalé **dans l'éditeur**, avant même de
   lancer l'application.
-- `req.auth` est typé dans vos routes Express : `req.auth?.userId` est un `string`.
+- `req.auth` est typé dans vos routes Express : `req.auth?.userId` est un `string`, et
+  `req.auth?.roles` une liste de textes.
+- Dans `authorize({ check: (user, req) => … })`, `user` et `req` (la requête Express) sont typés.
 - Tous les types publics sont exportés : `UserRepository`, `RefreshTokenStore`, `LoginResult`,
   `AuthPrincipal`, `AuthKitOptions`…
 

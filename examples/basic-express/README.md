@@ -6,6 +6,8 @@ Application complète montrant :
 - une route de connexion avec **double limitation des tentatives** (par IP et par identifiant) ;
 - un store Redis **facultatif** pour partager les compteurs entre plusieurs instances ;
 - une route protégée `/me` ;
+- une route réservée aux administrateurs `/admin/stats` (`expressAuth.authorize("admin")`) ;
+- le rafraîchissement de session (`/auth/refresh`) et la déconnexion (`/auth/logout`, `/auth/logout-all`) ;
 - une gestion d'erreurs qui ne divulgue aucun détail interne ;
 - des tests automatisés (Node.js Test Runner, sans base de données).
 
@@ -43,6 +45,9 @@ curl -s -X POST http://localhost:3000/auth/login \
 
 # Profil (remplacez <token>)
 curl -s http://localhost:3000/me -H "authorization: Bearer <token>"
+
+# Route réservée aux administrateurs (l'utilisateur de démonstration a le rôle « admin »)
+curl -s http://localhost:3000/admin/stats -H "authorization: Bearer <token>"
 ```
 
 Après 5 échecs sur le même identifiant en 15 minutes, la connexion répond `429 TOO_MANY_REQUESTS`.

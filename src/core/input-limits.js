@@ -18,3 +18,9 @@ export const MAX_TOKEN_LENGTH = 8192;
 
 /** Les jetons de rafraîchissement émis font 43 caractères ; la marge couvre d’autres formats. */
 export const MAX_REFRESH_TOKEN_LENGTH = 512;
+
+/** Nombre maximal de rôles (ou de permissions) par utilisateur : borne le coût des vérifications. */
+export const MAX_AUTHORITIES = 256;
+
+/** Longueur maximale d’un nom de rôle ou de permission (par exemple « orders:write »). */
+export const MAX_AUTHORITY_LENGTH = 128;

@@ -141,7 +141,7 @@ pourraient s'ajouter sans tout réécrire.
 | Fonctionnalité | Où elle s'intégrerait |
 | --- | --- |
 | Liste de révocation (tokens bloqués avant leur expiration) | Contrat facultatif interrogé par `verifyAccessToken()` avec le `tokenId`. |
-| RBAC / permissions (droits selon le rôle de l'utilisateur) | Ajout contrôlé d'informations au principal depuis le repository, puis middleware `authorize()` dans l'adaptateur. |
+| Hiérarchie de rôles et droits par objet (ACL) | Extension de `isAuthorized()` ; en attendant, la règle `check` couvre ces cas. |
 | Audit | Hook facultatif qui recevrait les événements (`login.succeeded`, `login.failed` avec `error.reason`). |
 | Clés asymétriques (RS/ES/EdDSA, JWKS) | Nouveau `TokenProvider`. Le contrat ne dépend déjà d'aucun algorithme. |
 | Sessions / cookies | Nouvel adaptateur ou nouvelle option de l'adaptateur Express, sans changer le Core. |
@@ -156,6 +156,7 @@ pourraient s'ajouter sans tout réécrire.
 | Décision | Pourquoi |
 | --- | --- |
 | **JavaScript + JSDoc, sans TypeScript** | Exigence du projet. Pas d'étape de build pour le code : le code publié est le code source. Les déclarations de types (`types/*.d.ts`) sont **générées** depuis le JSDoc avant la publication, jamais écrites à la main. |
+| **Rôles relus à chaque requête, jamais dans le JWT** | `findById()` est déjà appelé à chaque requête : les rôles en profitent. Un changement de rôle s'applique tout de suite, et le token reste petit. `authorize()` ne fait confiance qu'aux requêtes authentifiées par la même instance (registre interne, pas `req.auth`). |
 | **Refresh tokens opaques, stockés hachés** | Un jeton aléatoire (pas un JWT) peut être révoqué à tout moment. Seule son empreinte SHA-256 est stockée. Rotation à chaque usage et révocation de la famille en cas de réutilisation (OAuth 2.0 Security BCP). |
 | **Node.js ≥ 22.12, 24 LTS recommandé** | Versions LTS maintenues en 2026. Elles fournissent `fetch`, `crypto.randomUUID`, `--env-file` et un test runner stable. Node 20 n'est plus maintenu depuis avril 2026. |
 | **`jose`** pour les JWT | Sans dépendance, maintenue, conforme aux RFC. API stricte : liste d'algorithmes, `typ`, champs obligatoires. |

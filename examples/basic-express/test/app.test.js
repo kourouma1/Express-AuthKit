@@ -79,6 +79,20 @@ describe("example application", () => {
     assert.equal((await post("/auth/refresh", { refreshToken: other.refreshToken })).status, 401);
   });
 
+  it("reserves /admin/stats to administrators", async () => {
+    const { accessToken } = await (await login("alice@example.test", PASSWORD)).json();
+    const asUser = await fetch(`${baseUrl}/admin/stats`, { headers: { authorization: `Bearer ${accessToken}` } });
+    assert.equal(asUser.status, 403);
+
+    users.setRoles(demoUser.id, ["admin"]);
+    try {
+      const asAdmin = await fetch(`${baseUrl}/admin/stats`, { headers: { authorization: `Bearer ${accessToken}` } });
+      assert.equal(asAdmin.status, 200);
+    } finally {
+      users.setRoles(demoUser.id, []);
+    }
+  });
+
   it("protects /me", async () => {
     assert.equal((await fetch(`${baseUrl}/me`)).status, 401);
     const forged = await fetch(`${baseUrl}/me`, { headers: { authorization: "Bearer eyJhbGciOiJub25lIn0.e30." } });

@@ -8,6 +8,7 @@
  */
 
 export { createAuthKit } from "./factory/create-auth-kit.js";
+export { isAuthorized } from "./core/authorization.js";
 
 export { createArgon2PasswordProvider } from "./providers/argon2-password-provider.js";
 export { createJwtTokenProvider } from "./providers/jwt-token-provider.js";
@@ -21,6 +22,7 @@ export { assertRefreshTokenStore } from "./core/contracts/refresh-token-store.js
 export {
   AUTH_ERROR_CODES,
   AUTH_FAILURE_REASONS,
+  AccessDeniedError,
   AuthKitError,
   ConfigurationError,
   ContractViolationError,
@@ -51,6 +53,7 @@ export {
  * @typedef {import("./core/contracts/authentication-service.js").LoginResult} LoginResult
  * @typedef {import("./core/contracts/auth-principal.js").AuthPrincipal} AuthPrincipal
  * @typedef {import("./core/contracts/authentication-service.js").UserIdInput} UserIdInput
+ * @typedef {import("./core/authorization.js").AuthorizationRequirement} AuthorizationRequirement
  * @typedef {import("./config/refresh-token-options.js").RefreshTokenOptions} RefreshTokenOptions
  * @typedef {import("./core/contracts/refresh-token-store.js").RefreshTokenStore} RefreshTokenStore
  * @typedef {import("./core/contracts/refresh-token-store.js").RefreshTokenRecord} RefreshTokenRecord

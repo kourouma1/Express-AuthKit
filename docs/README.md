@@ -12,6 +12,7 @@ une route de connexion et une route protégée. Ensuite, choisissez la page qui 
 | Gérer l'inscription et le changement de mot de passe | [Mots de passe](mots-de-passe.md) |
 | Changer la durée des tokens ou le secret | [Configuration](configuration.md) |
 | Garder l'utilisateur connecté et gérer la déconnexion | [Refresh tokens](refresh-tokens.md) |
+| Réserver des routes à certains rôles ou permissions | [Rôles et permissions](roles-et-permissions.md) |
 | Utiliser TypeScript ou l'autocomplétion | [TypeScript](typescript.md) |
 
 ## J'ai un problème

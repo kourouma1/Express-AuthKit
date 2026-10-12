@@ -64,7 +64,8 @@ async function seedDemoUser(auth, users) {
     throw new Error("DEMO_USER_EMAIL et DEMO_USER_PASSWORD doivent être définis (voir .env.example).");
   }
   const passwordHash = await auth.password.hash(password);
-  users.create({ email, name: "Utilisateur de démonstration", passwordHash });
+  // L'utilisateur de démonstration est administrateur, pour essayer GET /admin/stats.
+  users.create({ email, name: "Utilisateur de démonstration", passwordHash, roles: ["admin"] });
   console.log(`Utilisateur de démonstration créé : ${email}`);
 }
 

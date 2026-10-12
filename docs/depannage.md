@@ -176,6 +176,20 @@ Le `code` de l'erreur (`INVALID_CREDENTIALS`, `TOKEN_MISSING`…) est dans la r�
   - **Horloge du serveur en retard** (`iat` dans le futur) : synchronisez-la (NTP), ou réglez
     `jwt.clockToleranceSeconds` (60 s maximum).
 
+### `403 ACCESS_DENIED`
+
+- **Cause probable** : l'utilisateur est bien connecté, mais n'a pas le rôle ou la permission
+  demandé par `authorize()`.
+- **Solution** : vérifiez que votre repository renvoie bien `roles` (ou `permissions`) dans
+  `findById()`, et que les noms correspondent exactement (`"admin"` n'est pas `"Admin"`).
+  Voir [rôles et permissions](roles-et-permissions.md).
+
+### « expressAuth.authorize() attend un rôle… »
+
+- **Cause probable** : la règle passée à `authorize()` est mal écrite, par exemple
+  `{ role: "admin" }` ou `{ anyRole: "admin" }`.
+- **Solution** : écrivez `authorize("admin")` ou `authorize({ anyRole: ["admin"] })`.
+
 ### `401 TOKEN_EXPIRED`
 
 - **Cause probable** : le token a dépassé sa durée de vie (`expiresInSeconds`).

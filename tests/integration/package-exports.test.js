@@ -11,6 +11,7 @@ describe("package exports", () => {
     assert.deepEqual(Object.keys(root).sort(), [
       "AUTH_ERROR_CODES",
       "AUTH_FAILURE_REASONS",
+      "AccessDeniedError",
       "AuthKitError",
       "ConfigurationError",
       "ContractViolationError",
@@ -30,7 +31,8 @@ describe("package exports", () => {
       "createAuthKit",
       "createInMemoryRefreshTokenStore",
       "createJwtTokenProvider",
-      "isAuthKitError"
+      "isAuthKitError",
+      "isAuthorized"
     ]);
   });
 

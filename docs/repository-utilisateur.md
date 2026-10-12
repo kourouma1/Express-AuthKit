@@ -37,6 +37,13 @@ Les trois champs attendus :
 - **`passwordHash`** : le hash produit par `auth.password.hash()` (voir [mots de passe](mots-de-passe.md)).
 - **`isActive`** : un booléen. L'accès n'est autorisé que s'il vaut **exactement** `true`.
 
+Deux champs facultatifs, pour les [rôles et permissions](roles-et-permissions.md) :
+
+- **`roles`** : liste de rôles, par exemple `["admin"]`.
+- **`permissions`** : liste de permissions, par exemple `["orders:write"]`.
+
+Ils sont relus à chaque requête et copiés dans `req.auth.roles` et `req.auth.permissions`.
+
 Vous pouvez renvoyer d'autres champs (e-mail, nom…). Ils sont ignorés : ils ne sont jamais
 copiés dans le token ni dans `req.auth`.
 
@@ -162,6 +169,20 @@ const auth = createAuthKit({ users: createPgUserRepository(pool), jwt: { /* … 
 - `AS "passwordHash"` renomme les colonnes pour qu'elles correspondent au contrat.
 - `$1` est un paramètre : il protège contre l'injection SQL. Ne collez jamais l'identifiant
   directement dans le texte de la requête.
+
+**Avec des rôles** : ajoutez une colonne de type liste de textes, puis lisez-la avec les autres.
+
+```sql
+ALTER TABLE users ADD COLUMN roles text[] NOT NULL DEFAULT '{}';
+UPDATE users SET roles = ARRAY['admin'] WHERE email = 'alice@example.com';
+```
+
+```javascript
+const AUTH_COLUMNS = 'id::text AS "id", password_hash AS "passwordHash", is_active AS "isActive", roles';
+```
+
+Le pilote `pg` renvoie une colonne `text[]` sous forme de tableau JavaScript : rien d'autre à
+changer. Voir [rôles et permissions](roles-et-permissions.md).
 
 ### Prisma
 

@@ -13,10 +13,14 @@ Its purpose is to simplify authentication implementation without imposing a data
 
 The library must remain easy to install, configure, understand, test, and extend.
 
+**Developer experience is the core goal**: prefer one-line integrations, accept common input shapes, and make every error message say how to fix the problem — without weakening security defaults.
+
 ## 2. Mandatory Technology Rules
 
 * Use JavaScript ES2022+ exclusively.
-* Never introduce TypeScript or `<span>.ts</span>` files.
+* Never write TypeScript source files by hand (no `.ts` sources).
+* TypeScript declarations (`types/**/*.d.ts`) are generated from JSDoc by `npm run build:types` (run automatically on `prepack`). They are not committed. The only hand-maintained declaration is the `Express.Request.auth` augmentation, appended by `scripts/build-types.js`.
+* JSDoc must stay precise: `npm run typecheck` (TypeScript strict mode, `checkJs`) must pass with zero errors.
 * Use native ECMAScript modules (`<span>import</span>` / `<span>export</span>`).
 * Use JSDoc for public APIs and contracts.
 * Target a maintained Node.js LTS version.
@@ -41,6 +45,10 @@ The project is organized into:
 * `<span>src/adapters/express/</span>`: Express middlewares and HTTP integration.
 * `<span>src/config/</span>`: configuration validation.
 * `<span>src/factory/</span>`: dependency injection and engine initialization.
+* `src/core/messages.js`: every error message, in one place.
+* `bin/`: the `express-authkit` CLI (`npx express-authkit secret`).
+* `scripts/`: type generation and packed-tarball verification.
+* `types/`: generated TypeScript declarations (git-ignored).
 * `<span>tests/</span>`: unit, integration, and security tests.
 * `<span>examples/</span>`: working JavaScript examples.
 * `<span>docs/</span>`: developer documentation.
@@ -86,6 +94,12 @@ Expected capabilities:
 * `<span>auth.password.verify(password, hash)</span>`
 * `<span>auth.verifyAccessToken(token)</span>`
 * `<span>expressAuth.authenticate()</span>`
+* `auth.refresh(refreshToken)`, `auth.logout(refreshToken)`, `auth.revokeAllSessions(userId)` (when `refreshTokens` is enabled)
+* `expressAuth.authorize(requirement)` and `isAuthorized(principal, requirement, context?)`
+* `expressAuth.login(options?)`, `expressAuth.refresh()`, `expressAuth.logout()`, `expressAuth.errorHandler()`
+* `npx express-authkit secret`
+
+Request handlers such as `expressAuth.login()` are not automatic routes: the application always chooses the URL.
 
 Treat these names as the intended public API. Keep implementation, tests, and documentation consistent.
 
@@ -105,8 +119,12 @@ Version 0.1.0 includes:
 8. Standardized authentication errors.
 9. Secure configuration validation.
 10. Automated tests and documentation.
+11. Refresh tokens (opt-in through `refreshTokens: { store }`): rotation, reuse detection, logout, revoke all sessions.
+12. Generated TypeScript declarations.
+13. French error messages with stable English error codes.
+14. Role- and permission-based authorization (`authorize()`, 403 `ACCESS_DENIED`).
 
-Do not implement OAuth, MFA, refresh tokens, RBAC, persistent sessions, or automatic authentication routes in the first release.
+Do not implement OAuth, MFA, role hierarchies or per-object ACLs, cookie-based sessions, password-reset or e-mail flows, or automatic authentication routes in the first release.
 
 ## 6. Security Rules
 
@@ -127,6 +145,11 @@ Security is a primary project requirement.
 * Validate external input at trust boundaries.
 * Document rate limiting and brute-force protection.
 * Explicitly document the limitations of stateless JWT revocation.
+* Refresh tokens are opaque random values (256 bits), never JWTs; store only their SHA-256 hash.
+* Rotate refresh tokens on every use and revoke the whole family when a used token is replayed.
+* `RefreshTokenStore.consume()` implementations must be atomic.
+* Roles and permissions come from the repository on every request; never put them in JWTs.
+* `authorize()` must only trust principals set by the same adapter instance, never a raw `req.auth`; authorization fails closed.
 * Follow relevant OWASP security recommendations.
 
 Any security-sensitive modification must include appropriate tests.
@@ -142,6 +165,8 @@ Do not claim a security guarantee that the implementation does not provide.
 * Avoid magic numbers and duplicated logic.
 * Do not silently swallow exceptions.
 * Use structured error types and stable error codes.
+* Write every error message in French, in `src/core/messages.js`; never hard-code message strings elsewhere. Error codes stay in English and are part of the public API.
+* Wrap unexpected failures of injected dependencies (repository, providers, stores) in `DependencyFailureError` via `callDependency()`, keeping the original error in `cause`.
 * Keep implementations independent of application-specific business logic.
 * Do not add dependencies when native Node.js features are sufficient.
 * Explain complex security decisions through concise comments.
@@ -172,6 +197,8 @@ Essential test scenarios:
 * Invalid configuration.
 * Repository failures.
 * Express middleware behavior.
+* Refresh token rotation, reuse, expiry, logout and concurrent refreshes.
+* Generated types (strict check of a consumer file in `npm run test:package`).
 
 Never claim tests passed unless they were executed successfully.
 
@@ -180,7 +207,7 @@ Never claim tests passed unless they were executed successfully.
 Documentation is a first-class project deliverable.
 
 * Write user documentation primarily in French.
-* Use simple and professional explanations.
+* Use simple and professional explanations: an « En bref » block at the top of each page, short sentences, every technical term explained at first use, code first then numbered steps, advanced material in « Pour aller plus loin » (never drop security warnings).
 * Provide copy-paste-ready JavaScript examples.
 * Explain prerequisites and environment variables.
 * Include complete examples rather than isolated snippets.
@@ -190,7 +217,7 @@ Documentation is a first-class project deliverable.
 * Keep examples aligned with the actual published API.
 * Do not document planned features as already available.
 
-The README should help a new Express.js developer get started quickly.
+The README should help a new Express.js developer get started quickly. Its quick start is executed verbatim by `npm run test:package`: keep it runnable.
 
 ## 10. Scalability and Extensibility
 
@@ -226,8 +253,8 @@ During implementation:
 
 After implementation:
 
-1. Run relevant tests.
-2. Run linting if configured.
+1. Run `npm run check` (lint, strict typecheck, tests).
+2. Run `npm run test:package` when the public API, packaging, README or examples change.
 3. Check public API compatibility.
 4. Check security-sensitive behavior.
 5. Summarize changed files.

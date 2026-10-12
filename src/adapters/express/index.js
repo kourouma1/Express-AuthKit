@@ -8,7 +8,8 @@
  */
 
 import { assertImplements } from "../../core/contracts/assert-contract.js";
-import { ConfigurationError, InvalidInputError } from "../../core/errors.js";
+import { normalizeAuthorizationRequirement, isAuthorized } from "../../core/authorization.js";
+import { AccessDeniedError, ConfigurationError, InvalidInputError } from "../../core/errors.js";
 import { MAX_IDENTIFIER_LENGTH } from "../../core/input-limits.js";
 import {
   DEVELOPER_MESSAGES,
@@ -27,6 +28,17 @@ import { getClientErrorStatus, resolveClientError, sendClientError } from "./htt
  */
 
 /**
+ * Règle d’accès pour `expressAuth.authorize()`. Un texte désigne un rôle.
+ * `check` reçoit l’utilisateur connecté et la requête Express.
+ *
+ * @typedef {string | {
+ *   anyRole?: string[],
+ *   allPermissions?: string[],
+ *   check?: (user: import("../../core/contracts/auth-principal.js").AuthPrincipal, req: import("express").Request) => boolean | Promise<boolean>
+ * }} ExpressAuthorizationRequirement
+ */
+
+/**
  * @typedef {object} LoginHandlerOptions
  * @property {string} [identifierField="identifier"] Champ du corps JSON contenant l’identifiant (par exemple `"email"`).
  */
@@ -34,6 +46,7 @@ import { getClientErrorStatus, resolveClientError, sendClientError } from "./htt
 /**
  * @typedef {Readonly<{
  *   authenticate: () => import("express").RequestHandler,
+ *   authorize: (requirement: ExpressAuthorizationRequirement) => import("express").RequestHandler,
  *   login: (options?: LoginHandlerOptions) => import("express").RequestHandler,
  *   refresh: () => import("express").RequestHandler,
  *   logout: () => import("express").RequestHandler,
@@ -67,6 +80,15 @@ export function createExpressAuth(auth, options = {}) {
   assertKnownKeys(options, ["realm"], "createExpressAuth(auth, options)");
 
   const realm = options.realm ?? DEFAULT_REALM;
+
+  /**
+   * Requêtes authentifiées par cette instance. `authorize()` ne fait confiance
+   * qu’à elles : une valeur de `req.auth` posée par un autre middleware est
+   * ignorée et ne peut pas usurper une identité.
+   *
+   * @type {WeakMap<object, import("../../core/contracts/auth-principal.js").AuthPrincipal>}
+   */
+  const authenticatedRequests = new WeakMap();
   if (typeof realm !== "string" || !REALM_PATTERN.test(realm)) {
     throw new ConfigurationError(DEVELOPER_MESSAGES.invalidRealm);
   }
@@ -96,11 +118,78 @@ export function createExpressAuth(auth, options = {}) {
         next(error);
         return;
       }
-      /** @type {import("express").Request & { auth?: import("../../core/contracts/auth-principal.js").AuthPrincipal }} */ (
-        req
-      ).auth = principal;
+      setPrincipal(req, principal);
       next();
     };
+  }
+
+  /**
+   * Protège une route par rôle, permission ou règle personnalisée. Authentifie
+   * aussi la requête si `authenticate()` n’a pas été appelé avant : une seule
+   * ligne suffit.
+   *
+   * Réponses : 401 si l’utilisateur n’est pas connecté, 403 (`ACCESS_DENIED`)
+   * s’il est connecté mais n’a pas les droits.
+   *
+   * @example
+   * app.get("/admin", expressAuth.authorize("admin"), handler);
+   * app.post("/orders", expressAuth.authorize({ allPermissions: ["orders:write"] }), handler);
+   * app.put("/users/:id", expressAuth.authorize({ check: (user, req) => user.userId === req.params.id }), handler);
+   *
+   * @param {ExpressAuthorizationRequirement} requirement
+   * @param {...unknown} unexpectedArguments Doit rester vide (détecte l’oubli des parenthèses).
+   * @returns {import("express").RequestHandler}
+   */
+  function authorize(requirement, ...unexpectedArguments) {
+    assertCalledAsFactory("authorize", unexpectedArguments);
+    // Validée une fois, au démarrage : une règle invalide arrête l’application.
+    const rules = normalizeAuthorizationRequirement(requirement);
+
+    return async function authorizeRequest(req, res, next) {
+      try {
+        const principal = await resolvePrincipal(req);
+        if (!(await isAuthorized(principal, rules, req))) {
+          throw new AccessDeniedError();
+        }
+      } catch (error) {
+        const status = getClientErrorStatus(error);
+        if (status !== undefined) {
+          sendClientError(res, /** @type {import("../../core/errors.js").AuthKitError} */ (error), status, realm);
+          return;
+        }
+        next(error);
+        return;
+      }
+      next();
+    };
+  }
+
+  /**
+   * Réutilise l’utilisateur déjà authentifié par `authenticate()` sur cette
+   * requête, ou authentifie la requête maintenant.
+   *
+   * @param {import("express").Request} req
+   * @returns {Promise<import("../../core/contracts/auth-principal.js").AuthPrincipal>}
+   */
+  async function resolvePrincipal(req) {
+    const existing = authenticatedRequests.get(req);
+    if (existing !== undefined) {
+      return existing;
+    }
+    const principal = await auth.verifyAccessToken(extractBearerToken(req.headers.authorization));
+    setPrincipal(req, principal);
+    return principal;
+  }
+
+  /**
+   * @param {import("express").Request} req
+   * @param {import("../../core/contracts/auth-principal.js").AuthPrincipal} principal
+   */
+  function setPrincipal(req, principal) {
+    authenticatedRequests.set(req, principal);
+    /** @type {import("express").Request & { auth?: import("../../core/contracts/auth-principal.js").AuthPrincipal }} */ (
+      req
+    ).auth = principal;
   }
 
   /**
@@ -228,7 +317,7 @@ export function createExpressAuth(auth, options = {}) {
     };
   }
 
-  return Object.freeze({ authenticate, login, refresh, logout, errorHandler });
+  return Object.freeze({ authenticate, authorize, login, refresh, logout, errorHandler });
 }
 
 /**

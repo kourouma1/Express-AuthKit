@@ -51,6 +51,11 @@ export function createApp({ auth, users, loginRateLimiters = createLoginRateLimi
     }
   });
 
+  // Réservé aux administrateurs : 401 sans token, 403 sans le rôle « admin ».
+  app.get("/admin/stats", expressAuth.authorize("admin"), (req, res) => {
+    res.json({ message: "Statistiques réservées aux administrateurs." });
+  });
+
   // Erreurs du client (JSON invalide, corps trop gros…) : réponses JSON propres en français.
   app.use(expressAuth.errorHandler());
 

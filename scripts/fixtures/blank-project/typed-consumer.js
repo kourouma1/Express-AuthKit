@@ -70,4 +70,16 @@ app.get("/profile", expressAuth.authenticate(), (req, res) => {
   // @ts-expect-error -- req.auth ne contient pas le hash du mot de passe.
   res.json({ userId, hash: req.auth?.passwordHash });
 });
+app.get("/admin", expressAuth.authorize("admin"), (req, res) => {
+  /** @type {readonly string[] | undefined} */
+  const roles = req.auth?.roles;
+  res.json({ roles });
+});
+app.put(
+  "/users/:id",
+  expressAuth.authorize({ anyRole: ["admin"], check: (user, req) => user.userId === req.params.id }),
+  (req, res) => res.end()
+);
+// @ts-expect-error -- anyRole attend une liste de rôles, pas un texte.
+expressAuth.authorize({ anyRole: "admin" });
 app.use(expressAuth.errorHandler());

@@ -62,7 +62,29 @@ describe("normalizeUserRecord", () => {
 
   it("keeps only the fields the engine needs", () => {
     const record = normalizeUserRecord({ id: "1", passwordHash: "$argon2id$x", isActive: true, email: "a@b.c" });
-    assert.deepEqual(record, { id: "1", passwordHash: "$argon2id$x", isActive: true });
+    assert.deepEqual(record, { id: "1", passwordHash: "$argon2id$x", isActive: true, roles: [], permissions: [] });
+  });
+
+  it("normalizes roles and permissions: frozen, deduplicated, empty when absent", () => {
+    const record = normalizeUserRecord({
+      id: "1",
+      passwordHash: "h",
+      isActive: true,
+      roles: ["admin", "editor", "admin"],
+      permissions: ["orders:read"]
+    });
+    assert.deepEqual(record.roles, ["admin", "editor"]);
+    assert.deepEqual(record.permissions, ["orders:read"]);
+    assert.ok(Object.isFrozen(record.roles));
+    assert.deepEqual(normalizeUserRecord({ id: "1", passwordHash: "h", isActive: true, roles: null }).roles, []);
+  });
+
+  it("rejects malformed roles and permissions", () => {
+    const base = { id: "1", passwordHash: "h", isActive: true };
+    for (const roles of ["admin", [""], [42], [{}], Array.from({ length: 257 }, (_, i) => `r${i}`), ["x".repeat(129)]]) {
+      assert.throws(() => normalizeUserRecord({ ...base, roles }), isContractViolation(/« roles »/));
+    }
+    assert.throws(() => normalizeUserRecord({ ...base, permissions: "orders:read" }), isContractViolation(/« permissions »/));
   });
 
   it("converts integer, bigint and ObjectId identifiers to strings", () => {

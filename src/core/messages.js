@@ -24,6 +24,7 @@ export const PUBLIC_MESSAGES = Object.freeze({
   tokenInvalid: "Jeton d’accès invalide.",
   tokenExpired: "Jeton d’accès expiré.",
   refreshTokenInvalid: "Jeton de rafraîchissement invalide ou expiré. Reconnectez-vous.",
+  accessDenied: "Accès refusé : vous n’avez pas les droits nécessaires.",
   credentialsNotObject: "Les identifiants doivent être un objet contenant « identifier » et « password ».",
   missingJsonBody:
     "Le corps de la requête doit être un objet JSON : envoyez l’en-tête « Content-Type: application/json ».",
@@ -105,6 +106,11 @@ export const DEVELOPER_MESSAGES = Object.freeze({
   refreshTokensDisabled:
     "Les jetons de rafraîchissement ne sont pas activés. Ajoutez l’option « refreshTokens: { store } » " +
     "à createAuthKit() (voir docs/refresh-tokens.md).",
+  authorizeRequirementInvalid:
+    "expressAuth.authorize() attend un rôle (\"admin\") ou un objet { anyRole, allPermissions, check } " +
+    "avec au moins une règle. anyRole et allPermissions sont des listes de textes non vides, check est une fonction.",
+  authorizationCheckNotBoolean:
+    "La fonction « check » de authorize() doit renvoyer true ou false (éventuellement via une promesse).",
   issuedTokenInvalid:
     "TokenProvider.issue() doit renvoyer { token, tokenId, issuedAt, expiresAt } : " +
     "token et tokenId sont des textes, issuedAt et expiresAt des nombres de secondes."
@@ -216,5 +222,18 @@ export function middlewareFactoryMisuse(method) {
   return (
     `expressAuth.${method} doit être appelé avec des parenthèses : ` +
     `écrivez expressAuth.${method}() et non expressAuth.${method}.`
+  );
+}
+
+/**
+ * @param {string} field « roles » ou « permissions ».
+ * @param {number} maxItems
+ * @param {number} maxLength
+ * @returns {string}
+ */
+export function repositoryRecordAuthorities(field, maxItems, maxLength) {
+  return (
+    `Le champ « ${field} » renvoyé par le repository doit être une liste de textes non vides ` +
+    `(au plus ${maxItems} éléments de ${maxLength} caractères), ou être absent.`
   );
 }

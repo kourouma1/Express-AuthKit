@@ -27,7 +27,7 @@ Toutes ces erreurs héritent de la classe `AuthKitError`.
 
 ## Liste des erreurs
 
-### Erreurs causées par le client (400 et 401)
+### Erreurs causées par le client (400, 401 et 403)
 
 | `code` | Statut | Quand ? | Message envoyé |
 | --- | --- | --- | --- |
@@ -36,10 +36,12 @@ Toutes ces erreurs héritent de la classe `AuthKitError`.
 | `TOKEN_MISSING` | 401 | Pas de token `Bearer` | « Authentification requise. » |
 | `TOKEN_INVALID` | 401 | Token mal formé, falsifié, mauvais `iss`/`aud`/`typ`/algorithme, utilisateur supprimé ou désactivé | « Jeton d’accès invalide. » |
 | `TOKEN_EXPIRED` | 401 | Token expiré (signature valide) | « Jeton d’accès expiré. » |
+| `ACCESS_DENIED` | 403 | Connecté, mais sans le rôle ou la permission demandé par `authorize()` ([rôles et permissions](roles-et-permissions.md)) | « Accès refusé : vous n’avez pas les droits nécessaires. » |
 | `REFRESH_TOKEN_INVALID` | 401 | Refresh token inconnu, expiré, déjà utilisé ou révoqué ([refresh tokens](refresh-tokens.md)) | « Jeton de rafraîchissement invalide ou expiré. Reconnectez-vous. » |
 
 - **400** : la requête est mal formée.
 - **401** : la personne n'est pas authentifiée.
+- **403** : la personne est authentifiée, mais n'a pas le droit d'accéder à la ressource.
 
 ### Erreurs côté serveur (à corriger dans votre code ou votre configuration)
 

@@ -84,7 +84,7 @@ export function createAuthenticationService({ users, passwordProvider, tokenProv
       throw new InvalidCredentialsError(AUTH_FAILURE_REASONS.ACCOUNT_DISABLED);
     }
 
-    return createSession(user.id);
+    return createSession(user);
   }
 
   /**
@@ -107,7 +107,7 @@ export function createAuthenticationService({ users, passwordProvider, tokenProv
       );
     }
 
-    return createSession(user.id, consumed.familyId);
+    return createSession(user, consumed.familyId);
   }
 
   /**
@@ -141,22 +141,22 @@ export function createAuthenticationService({ users, passwordProvider, tokenProv
    * Émet un jeton d’accès et, si la fonctionnalité est activée, un jeton de
    * rafraîchissement (dans la famille donnée, ou une nouvelle).
    *
-   * @param {string} userId
+   * @param {import("./contracts/user-repository.js").NormalizedUserRecord} user
    * @param {string} [familyId]
    * @returns {Promise<LoginResult>}
    */
-  async function createSession(userId, familyId) {
-    const issued = assertIssuedToken(await issueToken(userId));
+  async function createSession(user, familyId) {
+    const issued = assertIssuedToken(await issueToken(user.id));
     const result = {
       accessToken: issued.token,
       tokenType: /** @type {const} */ ("Bearer"),
       expiresIn: issued.expiresAt - issued.issuedAt,
-      principal: createAuthPrincipal(issued, userId)
+      principal: createAuthPrincipal(issued, user)
     };
     if (refreshTokens === undefined) {
       return result;
     }
-    const refreshed = await refreshTokens.issue(userId, familyId);
+    const refreshed = await refreshTokens.issue(user.id, familyId);
     return { ...result, refreshToken: refreshed.token, refreshExpiresIn: refreshed.expiresIn };
   }
 
@@ -197,7 +197,7 @@ export function createAuthenticationService({ users, passwordProvider, tokenProv
       throw new InvalidTokenError({ reason: AUTH_FAILURE_REASONS.ACCOUNT_DISABLED });
     }
 
-    return createAuthPrincipal(claims, user.id);
+    return createAuthPrincipal(claims, user);
   }
 
   return Object.freeze({ login, refresh, logout, revokeAllSessions, verifyAccessToken });

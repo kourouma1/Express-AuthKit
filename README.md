@@ -12,11 +12,12 @@
 
 ## En bref
 
-Express AuthKit s'occupe pour vous de trois choses :
+Express AuthKit s'occupe pour vous de quatre choses :
 
 1. **Stocker les mots de passe de façon sûre.** Vous ne gardez jamais le mot de passe, seulement une empreinte impossible à inverser.
 2. **Connecter un utilisateur.** S'il donne le bon mot de passe, il reçoit un *token* (un jeton signé, comme un badge d'accès temporaire).
 3. **Protéger vos routes.** Une route protégée refuse toute requête qui n'a pas de token valide.
+4. **Contrôler les droits.** Une route peut être réservée à un rôle (« admin ») ou à des permissions précises.
 
 Vous gardez votre base de données et votre modèle d'utilisateur. Vous écrivez seulement deux petites fonctions pour dire à la bibliothèque comment retrouver un utilisateur.
 
@@ -157,6 +158,7 @@ Une application plus complète, avec ses tests, se trouve dans [examples/basic-e
 | Le brancher sur Express | `const expressAuth = createExpressAuth(auth)` |
 | Ajouter la route de connexion | `app.post("/login", express.json(), expressAuth.login())` |
 | Protéger une route | `app.get("/me", expressAuth.authenticate(), handler)` puis `req.auth.userId` |
+| Réserver une route à un rôle | `app.get("/admin", expressAuth.authorize("admin"), handler)` |
 | Hacher un mot de passe (inscription) | `await auth.password.hash(password)` |
 | Vérifier un mot de passe | `await auth.password.verify(password, hash)` |
 | Rester connecté plus de 15 minutes | `refreshTokens: { store }` puis `app.post("/auth/refresh", express.json(), expressAuth.refresh())` |
@@ -182,6 +184,7 @@ La liste complète se trouve dans le [guide de sécurité](docs/securite.md).
 - [Brancher ma base de données](docs/repository-utilisateur.md) (PostgreSQL, Prisma, MongoDB…)
 - [Connecter les utilisateurs et protéger les routes](docs/connexion-et-routes.md)
 - [Gérer les mots de passe](docs/mots-de-passe.md) (inscription, changement de mot de passe)
+- [Rôles et permissions](docs/roles-et-permissions.md) (réserver une route aux administrateurs…)
 - [Rester connecté : les refresh tokens](docs/refresh-tokens.md) (et la déconnexion)
 - [Utiliser TypeScript](docs/typescript.md) (autocomplétion, `req.auth` typé)
 - [Régler la configuration](docs/configuration.md)
@@ -203,7 +206,7 @@ La liste complète se trouve dans le [guide de sécurité](docs/securite.md).
 ## Ce que la version 0.1.0 ne fait pas (encore)
 
 Pas de connexion via Google/GitHub (OAuth), pas de double authentification (MFA), pas de
-rôles ni de permissions, pas de cookies `HttpOnly`, pas de réinitialisation de mot de passe
+hiérarchie de rôles ni de droits par objet (ACL), pas de cookies `HttpOnly`, pas de réinitialisation de mot de passe
 par e-mail.
 Ces sujets sont [prévus pour plus tard](docs/architecture.md#points-dextension-futurs).
 

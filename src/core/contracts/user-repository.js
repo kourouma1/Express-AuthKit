@@ -1,5 +1,6 @@
 import { ContractViolationError } from "../errors.js";
-import { DEVELOPER_MESSAGES } from "../messages.js";
+import { MAX_AUTHORITIES, MAX_AUTHORITY_LENGTH } from "../input-limits.js";
+import { DEVELOPER_MESSAGES, repositoryRecordAuthorities } from "../messages.js";
 import { assertImplements } from "./assert-contract.js";
 
 /**
@@ -13,6 +14,20 @@ import { assertImplements } from "./assert-contract.js";
  * @property {string | number | bigint | { toHexString(): string }} id Identifiant stable, unique et non secret (chaîne, entier ou ObjectId MongoDB) ; converti en chaîne, il devient la revendication JWT `sub`.
  * @property {string} passwordHash Hash Argon2id produit par `auth.password.hash()`.
  * @property {boolean} isActive Doit valoir exactement `true` pour autoriser la connexion.
+ * @property {string[]} [roles] Rôles de l’utilisateur (par exemple `["admin"]`). Facultatif.
+ * @property {string[]} [permissions] Permissions de l’utilisateur (par exemple `["orders:write"]`). Facultatif.
+ */
+
+/**
+ * Enregistrement validé et normalisé, utilisé par le moteur.
+ *
+ * @typedef {{
+ *   id: string,
+ *   passwordHash: string,
+ *   isActive: boolean,
+ *   roles: readonly string[],
+ *   permissions: readonly string[]
+ * }} NormalizedUserRecord
  */
 
 /**
@@ -52,7 +67,7 @@ export function assertUserRepository(repository) {
  * connexion, ce qui masquerait le problème.
  *
  * @param {unknown} record
- * @returns {{ id: string, passwordHash: string, isActive: boolean } | null} Enregistrement avec un `id` toujours en texte.
+ * @returns {NormalizedUserRecord | null} Enregistrement avec un `id` toujours en texte.
  * @throws {ContractViolationError}
  */
 export function normalizeUserRecord(record) {
@@ -63,7 +78,7 @@ export function normalizeUserRecord(record) {
     throw new ContractViolationError(DEVELOPER_MESSAGES.repositoryRecordNotObject);
   }
 
-  const { passwordHash, isActive } = /** @type {Record<string, unknown>} */ (record);
+  const { passwordHash, isActive, roles, permissions } = /** @type {Record<string, unknown>} */ (record);
   const id = normalizeUserId(/** @type {Record<string, unknown>} */ (record).id);
   if (typeof passwordHash !== "string" || passwordHash.length === 0) {
     throw new ContractViolationError(DEVELOPER_MESSAGES.repositoryRecordPasswordHash);
@@ -72,7 +87,36 @@ export function normalizeUserRecord(record) {
     throw new ContractViolationError(DEVELOPER_MESSAGES.repositoryRecordIsActive);
   }
 
-  return { id, passwordHash, isActive };
+  return {
+    id,
+    passwordHash,
+    isActive,
+    roles: normalizeAuthorities(roles, "roles"),
+    permissions: normalizeAuthorities(permissions, "permissions")
+  };
+}
+
+/**
+ * Valide une liste de rôles ou de permissions. Absente, elle vaut une liste
+ * vide : un utilisateur sans rôle n’obtient aucun accès protégé par rôle.
+ *
+ * @param {unknown} value
+ * @param {string} field
+ * @returns {readonly string[]} Liste figée, sans doublons.
+ * @throws {ContractViolationError}
+ */
+function normalizeAuthorities(value, field) {
+  if (value === undefined || value === null) {
+    return Object.freeze([]);
+  }
+  const isValid =
+    Array.isArray(value) &&
+    value.length <= MAX_AUTHORITIES &&
+    value.every((item) => typeof item === "string" && item.length > 0 && item.length <= MAX_AUTHORITY_LENGTH);
+  if (!isValid) {
+    throw new ContractViolationError(repositoryRecordAuthorities(field, MAX_AUTHORITIES, MAX_AUTHORITY_LENGTH));
+  }
+  return Object.freeze([...new Set(/** @type {string[]} */ (value))]);
 }
 
 /**

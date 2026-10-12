@@ -14,6 +14,7 @@ Cochez chaque point. Chacun est expliqué plus bas.
 - [ ] Le secret JWT est généré avec `npx express-authkit secret` et n'est jamais commité ([détails](#rotation-du-secret)).
 - [ ] La durée de vie des tokens reste **courte** (15 minutes par défaut) ([détails](#révocation-des-jwt)).
 - [ ] Vous savez **couper l'accès** d'un utilisateur : désactiver son compte ([détails](#révocation-des-jwt)).
+- [ ] Les routes sensibles (administration…) sont protégées par `authorize()`, pas seulement par `authenticate()` ([rôles et permissions](roles-et-permissions.md)).
 - [ ] Les logs ne contiennent **ni mot de passe, ni token, ni en-tête `Authorization`** ([détails](#journalisation)).
 - [ ] Les en-têtes HTTP sont durcis : `helmet`, limite de taille JSON, CORS, `no-store` ([détails](#en-têtes-et-durcissement-http)).
 - [ ] Le client stocke le token de façon prudente ([détails](#stockage-du-token-côté-client)).
@@ -32,6 +33,7 @@ Cochez chaque point. Chacun est expliqué plus bas.
 | Pas d'énumération de comptes | Même erreur pour un compte inconnu, un mauvais mot de passe ou un compte désactivé. Un attaquant ne peut donc pas savoir si un e-mail est inscrit. | `tests/security/login-security.test.js` |
 | Temps de réponse égalisé | Pour un compte inexistant, un vrai calcul Argon2id est fait sur un hash factice. La réponse prend donc à peu près le même temps. | `tests/security/login-security.test.js` |
 | Comptes désactivés ou supprimés | Refusés à la connexion **et** à chaque requête authentifiée. | `tests/security/login-security.test.js` |
+| Rôles et permissions | Relus à chaque requête, jamais dans le JWT ; `req.auth` posé par un autre middleware ignoré ; une règle `check` défaillante refuse l'accès. | `tests/security/authorization.test.js` |
 | Hash du mot de passe protégé | Jamais renvoyé par `login()`, jamais placé dans `req.auth`. | `tests/unit/authentication-service.test.js` |
 | Entrées vérifiées | Types et longueurs contrôlés avant tout calcul coûteux. | `tests/unit/authentication-service.test.js` |
 | Erreurs HTTP sobres | Seuls un code et un message public sont envoyés. Jamais la pile d'appels, la cause ni la raison interne. | `tests/integration/express.test.js` |

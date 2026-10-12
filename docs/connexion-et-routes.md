@@ -147,6 +147,9 @@ Toutes les routes du routeur exigent un token valide.
 
 Quand le client reçoit `TOKEN_EXPIRED`, il redemande une connexion.
 
+> Pour réserver une route à certains utilisateurs (administrateurs, permissions…), utilisez
+> `expressAuth.authorize()` : voir [rôles et permissions](roles-et-permissions.md).
+
 ## Étape 3 : côté client (navigateur, mobile)
 
 ```javascript

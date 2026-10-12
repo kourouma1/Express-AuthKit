@@ -8,14 +8,14 @@ import { randomUUID } from "node:crypto";
  * Express AuthKit se limite à findByIdentifier() et findById().
  */
 export class InMemoryUserRepository {
-  /** @type {Map<string, { id: string, email: string, name: string, passwordHash: string, isActive: boolean }>} */
+  /** @type {Map<string, { id: string, email: string, name: string, passwordHash: string, isActive: boolean, roles: string[] }>} */
   #users = new Map();
 
   /**
-   * @param {{ email: string, name: string, passwordHash: string, isActive?: boolean }} input
+   * @param {{ email: string, name: string, passwordHash: string, isActive?: boolean, roles?: string[] }} input
    */
-  create({ email, name, passwordHash, isActive = true }) {
-    const user = { id: randomUUID(), email: normalizeEmail(email), name, passwordHash, isActive };
+  create({ email, name, passwordHash, isActive = true, roles = [] }) {
+    const user = { id: randomUUID(), email: normalizeEmail(email), name, passwordHash, isActive, roles };
     this.#users.set(user.id, user);
     return toPublicProfile(user);
   }
@@ -45,6 +45,15 @@ export class InMemoryUserRepository {
 
   /**
    * @param {string} id
+   * @param {string[]} roles
+   */
+  setRoles(id, roles) {
+    const user = this.#users.get(id);
+    if (user) user.roles = roles;
+  }
+
+  /**
+   * @param {string} id
    * @param {boolean} isActive
    */
   setActive(id, isActive) {
@@ -58,7 +67,8 @@ function normalizeEmail(email) {
 }
 
 function toAuthRecord(user) {
-  return { id: user.id, passwordHash: user.passwordHash, isActive: user.isActive };
+  // Les rôles sont relus à chaque requête : un changement s'applique tout de suite.
+  return { id: user.id, passwordHash: user.passwordHash, isActive: user.isActive, roles: user.roles };
 }
 
 function toPublicProfile(user) {

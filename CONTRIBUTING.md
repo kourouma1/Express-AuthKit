@@ -59,3 +59,46 @@ tests/
 5. Ouvrez une pull request décrivant le problème, la solution et l'impact sécurité éventuel.
 
 Les vulnérabilités ne doivent pas être signalées par issue publique : voir [SECURITY.md](SECURITY.md).
+
+## Publier une nouvelle version (mainteneurs)
+
+La publication est automatique : elle part d'une **Release GitHub**, et le workflow
+`.github/workflows/release.yml` vérifie tout avant de publier sur npm. Aucun jeton npm n'est
+stocké dans GitHub : npm reconnaît le workflow grâce à la *publication de confiance* (OIDC), et
+chaque version reçoit une attestation de provenance (lien vérifiable vers le commit source).
+
+### Configuration (une seule fois)
+
+1. **Première publication à la main.** npm ne permet de configurer la publication de confiance
+   que pour un package qui existe déjà. Publiez donc la première version depuis votre poste :
+   `npm login`, puis `npm publish --tag next` pour une version candidate.
+2. **Sur npmjs.com** : page du package → *Settings* → *Trusted publishing* → *GitHub Actions*.
+   Renseignez : propriétaire `kourouma1`, dépôt `Express-AuthKit`, workflow `release.yml`,
+   environnement `npm`.
+3. **Sur GitHub** : *Settings* → *Environments* → créez l'environnement `npm`. Ajoutez-y des
+   *Required reviewers* pour qu'une personne approuve chaque publication (recommandé).
+4. **Sur npmjs.com, ensuite** : dans *Settings* → *Publishing access*, choisissez
+   « Require two-factor authentication and disallow tokens ». Seul le workflow pourra alors
+   publier.
+
+### À chaque version
+
+1. Mettez à jour `CHANGELOG.md` : déplacez « Non publié » vers la nouvelle version et sa date.
+2. Changez la version, sans créer de tag local :
+
+   ```bash
+   npm version 0.2.0 --no-git-tag-version      # ou 0.2.0-rc.1 pour une version candidate
+   ```
+
+3. Commitez et poussez sur `main`, puis attendez que la CI soit verte.
+4. Sur GitHub, créez une **Release** avec le tag `v0.2.0` (exactement « v » + la version de
+   `package.json`). Copiez la section du CHANGELOG dans la description.
+   Pour une version candidate, cochez *Set as a pre-release*.
+5. Le workflow `Release` se lance. Il :
+   - refuse de continuer si le tag ne correspond pas à `package.json` ;
+   - lance lint, types et tests, puis teste le package dans un projet vierge ;
+   - publie sur npm : sous l'étiquette `latest`, ou `next` pour une version candidate.
+6. Vérifiez : `npm view express-authkit`.
+
+> Une version publiée ne peut jamais être republiée. En cas d'erreur, publiez une version
+> corrective (`0.2.1`) et dépréciez l'autre avec `npm deprecate express-authkit@0.2.0 "…"`.

@@ -1,0 +1,81 @@
+name: Release
+
+# Publie le package sur npm quand une Release GitHub est publiée.
+#
+# Aucun jeton npm n'est stocké : la publication utilise la « publication de
+# confiance » de npm (OIDC). npm vérifie que la demande vient bien de CE
+# workflow, dans CE dépôt, et ajoute une attestation de provenance qui relie
+# la version publiée au commit exact qui l'a produite.
+#
+# Configuration unique, sur npmjs.com : Package → Settings → Trusted publishing →
+# GitHub Actions, avec : propriétaire « kourouma1 », dépôt « Express-AuthKit »,
+# workflow « release.yml », environnement « npm ».
+# Voir CONTRIBUTING.md, section « Publier une nouvelle version ».
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    # Environnement GitHub « npm » : vous pouvez y exiger une approbation
+    # manuelle avant chaque publication (Settings → Environments → npm).
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write # nécessaire à la publication de confiance (OIDC)
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24.x
+          registry-url: https://registry.npmjs.org
+
+      - name: Check npm version (trusted publishing requires npm >= 11.5.1)
+        run: |
+          node -e '
+            const [major, minor, patch] = process.argv[1].split(".").map(Number);
+            const ok = major > 11 || (major === 11 && (minor > 5 || (minor === 5 && patch >= 1)));
+            if (!ok) { console.error(`npm ${process.argv[1]} is too old for trusted publishing`); process.exit(1); }
+          ' "$(npm --version)"
+
+      - name: Check that the release tag matches package.json
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+          if [ "$RELEASE_TAG" != "v$PACKAGE_VERSION" ]; then
+            echo "::error::Le tag de la release ($RELEASE_TAG) doit être v$PACKAGE_VERSION (version de package.json)."
+            exit 1
+          fi
+
+      - run: npm ci
+
+      - name: Lint, types and tests
+        run: npm run check
+
+      - name: Packed tarball in a blank project
+        run: npm run test:package
+
+      - name: Publish
+        env:
+          PRERELEASE: ${{ github.event.release.prerelease }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          # Une version candidate (0.2.0-rc.1…) ou une release marquée « pre-release »
+          # est publiée sous l'étiquette « next » : elle ne s'installe que si on la demande.
+          if [ "$PRERELEASE" = "true" ] || [[ "$RELEASE_TAG" == *-* ]]; then
+            npm publish --provenance --tag next
+          else
+            npm publish --provenance
+          fi
